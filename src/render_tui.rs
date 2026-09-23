@@ -80,7 +80,7 @@ fn run_all<W: Write>(
     Ok(session)
 }
 
-// ─── Welcome screen ─────────────────────────────────────────────────────
+// --- Welcome screen -----------------------------------------------------
 #[derive(Clone, Copy, PartialEq)]
 enum Field { Soldiers, Minutes, Name(usize) }
 
@@ -309,7 +309,7 @@ fn field_line<W: Write>(out: &mut W, label: &str, value: &str, selected: bool, w
     Ok(())
 }
 
-// ─── Running screen: big centered timer + landscape ────────────────────
+// --- Running screen: big centered timer + landscape --------------------
 
 #[derive(Debug, Clone)]
 enum Anim {
@@ -403,7 +403,7 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
     let mut last_world: Option<landscape::WorldState> = None;
 
     loop {
-        // ── Input ─────────────────────────────────────────────────────
+        // -- Input -----------------------------------------------------
         if event::poll(Duration::from_millis(20))? {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press {
@@ -455,7 +455,7 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
             }
         }
 
-        // ── 1-sec session tick ────────────────────────────────────────
+        // -- 1-sec session tick ----------------------------------------
         if last_sec_tick.elapsed() >= Duration::from_secs(1) {
             session.tick_one_second();
             telemetry::count_phase_second(session.phase());
@@ -475,7 +475,7 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
             }
         }
 
-        // ── Animation transitions ─────────────────────────────────────
+        // -- Animation transitions -------------------------------------
         let mut next_anim = anim.clone();
         if let Some(a) = anim.as_ref() {
             match a {
@@ -512,7 +512,7 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
         }
         anim = next_anim;
 
-        // ── Render ────────────────────────────────────────────────────
+        // -- Render ----------------------------------------------------
         frame += 1;
         let elapsed_ms = start.elapsed().as_millis() as u64;
         let blink_500 = ((elapsed_ms / 500) % 2) as u8;
@@ -562,7 +562,7 @@ fn draw_running<W: Write>(
     let cols = cols_u16 as usize;
     let rows = rows_u16 as usize;
 
-    // ── Decide which font & color the timer uses ──────────────────────
+    // -- Decide which font & color the timer uses ----------------------
     let alw = snap.current_allowance.max(1);
     let elapsed_cur = snap.elapsed_current as i32;
     let two_thirds = (alw * 2) / 3;
@@ -573,12 +573,12 @@ fn draw_running<W: Write>(
     } else if remaining <= 5 {
         if blink_1000 == 0 { (ascii_fonts::Font::Ok, Color::Red) } else { (ascii_fonts::Font::Ko, Color::Red) }
     } else if elapsed_cur >= two_thirds {
-        (ascii_fonts::Font::Ko, Color::Yellow)
+        (ascii_fonts::Font::Ok, Color::Yellow)
     } else {
         (ascii_fonts::Font::Ok, Color::Green)
     };
 
-    // ── Build canvas ─────────────────────────────────────────────────
+    // -- Build canvas -------------------------------------------------
     let mut canvas: Vec<Vec<char>> = vec![vec![' '; cols]; rows];
     let mut color_map: Vec<Vec<Option<Color>>> = vec![vec![None; cols]; rows];
 
@@ -609,7 +609,7 @@ fn draw_running<W: Write>(
         paint_victory(&mut canvas, &mut color_map, &world, *frame);
     }
 
-    // ── Big timer ─────────────────────────────────────────────────────
+    // -- Big timer -----------------------------------------------------
     let (mins, secs) = if remaining >= 0 {
         ((remaining / 60) as u32, (remaining % 60) as u32)
     } else {
@@ -645,7 +645,7 @@ fn draw_running<W: Write>(
         }
     }
 
-    // ── Header / footer ──────────────────────────────────────────────
+    // -- Header / footer ----------------------------------------------
     let bonus = snap.current_allowance - snap.per_soldier_seconds as i32;
     let bonus_str = if bonus > 0 { format!(" (+{}s pool)", bonus) }
         else if bonus < 0 { format!(" ({}s pool)", bonus) } else { String::new() };
@@ -672,12 +672,12 @@ fn draw_running<W: Write>(
     }
     let _ = frame;
 
-    // ── Diff flush ───────────────────────────────────────────────────
+    // -- Diff flush ---------------------------------------------------
     renderer.render(out, &canvas, &color_map)?;
     Ok(world)
 }
 
-// ─── Mario victory overlay ─────────────────────────────────────────────
+// --- Mario victory overlay ---------------------------------------------
 
 fn paint_victory(
     canvas: &mut [Vec<char>],
@@ -752,7 +752,7 @@ fn paint_string(
     }
 }
 
-// ─── Closing screen ─────────────────────────────────────────────────────
+// --- Closing screen -----------------------------------------------------
 fn closing_loop<W: Write>(out: &mut W, session: &mut Session) -> Result<()> {
     let mut last_tick = Instant::now();
     loop {
@@ -802,7 +802,7 @@ fn draw_closing<W: Write>(out: &mut W, session: &Session) -> Result<()> {
     }
     queue!(out, Print("\r\n"),
         SetForegroundColor(Color::DarkYellow),
-        Print("    ─────────────────────────────────\r\n"),
+        Print("    ---------------------------------\r\n"),
         ResetColor,
         Print(format!("    Preparation : {}\r\n", fmt(snap.prep_seconds))),
         Print(format!("    Daily total : {}\r\n", fmt(snap.total_elapsed))),
@@ -816,7 +816,7 @@ fn draw_closing<W: Write>(out: &mut W, session: &Session) -> Result<()> {
     Ok(())
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------
 fn fmt(s: u32) -> String { format!("{}:{:02}", s / 60, s % 60) }
 
 fn print_final_summary(session: &Session) {
@@ -829,7 +829,7 @@ fn print_final_summary(session: &Session) {
         let over = if s.overtime_seconds > 0 { format!("  (+{} over)", fmt(s.overtime_seconds)) } else { String::new() };
         println!("  {:>2}. {:<24} {}{}", s.index, s.name, fmt(s.elapsed_seconds), over);
     }
-    println!("──────────────────────────────");
+    println!("------------------------------");
     println!("  Preparation     : {}", fmt(snap.prep_seconds));
     println!("  Daily total     : {}", fmt(total));
     println!("  Closing         : {}", fmt(snap.closing_seconds));
