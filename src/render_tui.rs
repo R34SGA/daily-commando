@@ -1262,9 +1262,12 @@ fn print_final_summary(session: &Session) {
     let total: u32 = stats.iter().map(|s| s.elapsed_seconds).sum();
     println!();
     println!("════════ FINAL DEBRIEF ════════");
+    let per = session.config().per_soldier_seconds();
     for s in &stats {
-        let over = if s.overtime_seconds > 0 {
+        let extra = if s.overtime_seconds > 0 {
             format!("  (+{} over)", fmt(s.overtime_seconds))
+        } else if s.elapsed_seconds < per {
+            format!("  (-{} saved)", fmt(per - s.elapsed_seconds))
         } else {
             String::new()
         };
@@ -1273,7 +1276,7 @@ fn print_final_summary(session: &Session) {
             s.index,
             s.name,
             fmt(s.elapsed_seconds),
-            over
+            extra
         );
     }
     println!("------------------------------");
