@@ -31,15 +31,14 @@ cargo run -- -n 3 -t 5        # quick smoke test
 ## Before you commit
 
 ```sh
-cargo test          # required — must pass
+cargo fmt               # required — the tree is fully rustfmt-formatted
+cargo test              # required — must pass
 cargo clippy --all-targets   # no new warnings on code you touched
 ```
 
-The codebase predates rustfmt defaults, so `cargo fmt --check` is not
-enforced; match the surrounding style of the file you edit instead.
-Tests live next to the code (`#[cfg(test)]` modules); new domain behavior
-in `Session` or `cache` deserves a unit test — TUI drawing is verified by
-running it.
+All checks must pass. Tests live next to the code (`#[cfg(test)]`
+modules); new domain behavior in `Session` or `cache` deserves a unit
+test — TUI drawing is verified by running it.
 
 ## Commit messages
 
