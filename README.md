@@ -21,6 +21,21 @@ Flags:
 - `--skip-welcome`       jump straight into the run (TUI)
 - `--metrics-port PORT`  Prometheus `/metrics` endpoint (default `9464`)
 - `--no-metrics`         disable the metrics HTTP server
+- `--no-cache`            do not read or write the local roster cache
+
+## Roster cache
+
+Soldier names are remembered between runs. The full roster is persisted as
+JSON under the user cache directory
+(`$XDG_CACHE_HOME/daily-commando/roster.json`, falling back to
+`$HOME/.cache/daily-commando/roster.json`) when the daily commences, and
+pre-fills the name fields on the next run.
+
+* Only names are cached — the exclusion zone (absentees of one instance)
+  is deliberately *not* persisted: absentees are re-marked at each briefing.
+* `--names` wins over the cache and bypasses it entirely.
+* `--no-cache` disables both the read and the write.
+* A missing or corrupt cache file is silently treated as an empty roster.
 
 ## TUI controls
 
@@ -29,12 +44,17 @@ Flags:
 |-----------------|-------------------------------------------------------|
 | `Tab` / `↑` `↓` | Move focus between fields                             |
 | `Enter`         | Validate field / start the daily when on the button   |
+| `+` / `-`       | Adjust the focused numeric field (soldiers, minutes)  |
+| `Alt+X`         | Toggle the **exclusion zone** (absent today)          |
 | `s` or `F5`     | **Shuffle** the running order randomly                |
 | `r` or `F6`     | **Reset** to the order initially typed                |
 | `Alt+↑` / `Alt+↓` | **Move** the focused soldier up / down              |
+| `F2`            | **Commence** the daily                                |
 | `q` / `Esc`     | Abort                                                 |
 
 The 1-based index in front of each soldier **is** the speaking order.
+Soldiers in the exclusion zone are grounded (shown in the *absent today*
+section); the daily cannot start with an empty boat.
 
 ### Running screen
 | Key                | Action                            |
@@ -62,6 +82,8 @@ The display is a side-scroller:
   soldier; islands sit still until either the user hands over early (anchor
   pulls the island TO the boat) or the boat passes without pickup (a rope
   tows the island 2 chars behind the boat),
+* islands whose speaker is done **stay on screen as landmarks** with a
+  colored flag planted on the beach,
 * the **font switches** to corrupt `ko` glyphs at 66 % of the allowance,
   alternates every tick in the last 5 s, and blinks every 0.5 s in overtime,
 * the renderer is **diff-based**: only changed cells are repainted, so the
@@ -86,6 +108,7 @@ src/
 ├── lib.rs          re-exports the domain
 ├── session.rs      pure state machine, no I/O — future web backend reuses this as-is
 ├── main.rs         CLI parsing
+├── cache.rs        local roster cache (names persisted between runs)
 ├── telemetry.rs    OpenTelemetry-style logs/metrics + Prometheus /metrics HTTP
 ├── ascii_fonts.rs  big 7×7 digit glyphs (Ok / Ko)
 ├── landscape.rs    sun, boat, islands, castle, cascade, Satan
@@ -125,4 +148,5 @@ No personal data leaves the host: soldier names are kept locally; only their
 
 ## License
 
-EUPL-1.2 — see [LICENSE](LICENSE).
+EUPL-1.2 — see [LICENSE](LICENSE). Contributions follow
+[CONTRIBUTING.md](CONTRIBUTING.md).
