@@ -1049,11 +1049,13 @@ fn paint_upcoming_roster(
         paint_string(canvas, colors, x, y, &label, Color::DarkGrey);
         y += 1;
     }
-    let upcoming = snap.soldiers.saturating_sub(cur);
-    if upcoming > 0 && y + 1 < rows {
-        // Pool left for the others if the current speaker hands over now.
+    // Everyone in the list (current speaker included) still has to pass.
+    let remaining_to_pass = snap.soldiers - cur + 1;
+    if y + 1 < rows {
+        // (initial daily budget − time consumed since the boat launched)
+        // divided by the number of soldiers still to pass.
         let pool = snap.total_budget as i32 - snap.total_elapsed as i32;
-        let each = (pool.max(0)) / upcoming as i32;
+        let each = (pool.max(0)) / remaining_to_pass as i32;
         let spent = snap.elapsed_current as i32;
         let each_color = if each < spent {
             Color::Red
