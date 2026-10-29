@@ -936,6 +936,10 @@ fn draw_running<W: Write>(
         Color::DarkYellow,
     );
 
+    // -- Rosters below the banner: done (left) & to come (right) -------
+    paint_done_roster(&mut canvas, &mut color_map, &snap, session, rows);
+    paint_upcoming_roster(&mut canvas, &mut color_map, &snap, session, cols, rows);
+
     let phase_str = match snap.phase {
         Phase::Preparation => "PREP",
         Phase::Running => "RUNNING",
@@ -980,6 +984,89 @@ fn draw_running<W: Write>(
 }
 
 // --- Mario victory overlay ---------------------------------------------
+
+/// Left panel: soldiers who already spoke — gray names, consumed time
+/// green if they held the nominal per-person time, yellow up to +5 s,
+/// red beyond.
+fn paint_done_roster(
+    canvas: &mut [Vec<char>],
+    colors: &mut [Vec<Option<Color>>],
+    snap: &Tick,
+    session: &Session,
+    rows: usize,
+) {
+    let per = snap.per_soldier_seconds;
+    for (i, &e) in session.elapsed().iter().enumerate() {
+        // Past speakers only; snapshot's current_soldier is 1-based.
+        if (i as u32) + 1 >= snap.current_soldier {
+            break;
+        }
+        let y = 1 + i;
+        if y + 1 >= rows {
+            break;
+        }
+        let name = session.config().name_of(i as u32);
+        let label = format!("{:>2}. {}  ", i + 1, name);
+        paint_string(canvas, colors, 1, y, &label, Color::DarkGrey);
+        let time_color = if e <= per {
+            Color::Green
+        } else if e <= per + 5 {
+            Color::Yellow
+        } else {
+            Color::Red
+        };
+        paint_string(
+            canvas,
+            colors,
+            1 + label.chars().count(),
+            y,
+            &fmt(e),
+            time_color,
+        );
+    }
+}
+
+/// Right panel: current + upcoming soldiers in gray, plus the time left
+/// per remaining soldier if the current speaker stops now — yellow when
+/// within 5 s of what the current speaker already spent, red below.
+fn paint_upcoming_roster(
+    canvas: &mut [Vec<char>],
+    colors: &mut [Vec<Option<Color>>],
+    snap: &Tick,
+    session: &Session,
+    cols: usize,
+    rows: usize,
+) {
+    let cur = snap.current_soldier; // 1-based
+    let mut y = 1;
+    for i in cur..=snap.soldiers {
+        if y + 1 >= rows {
+            break;
+        }
+        let marker = if i == cur { "> " } else { "  " };
+        let label = format!("{}{:>2}. {}", marker, i, session.config().name_of(i - 1));
+        let x = cols.saturating_sub(label.chars().count() + 1);
+        paint_string(canvas, colors, x, y, &label, Color::DarkGrey);
+        y += 1;
+    }
+    let upcoming = snap.soldiers.saturating_sub(cur);
+    if upcoming > 0 && y + 1 < rows {
+        // Pool left for the others if the current speaker hands over now.
+        let pool = snap.total_budget as i32 - snap.total_elapsed as i32;
+        let each = (pool.max(0)) / upcoming as i32;
+        let spent = snap.elapsed_current as i32;
+        let each_color = if each < spent {
+            Color::Red
+        } else if each <= spent + 5 {
+            Color::Yellow
+        } else {
+            Color::DarkGrey
+        };
+        let label = format!("({}sec each)", each);
+        let x = cols.saturating_sub(label.chars().count() + 1);
+        paint_string(canvas, colors, x, y, &label, each_color);
+    }
+}
 
 fn paint_victory(
     canvas: &mut [Vec<char>],
