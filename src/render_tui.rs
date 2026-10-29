@@ -81,7 +81,7 @@ fn run_all<W: Write>(
 }
 
 // --- Welcome screen -----------------------------------------------------
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Field { Soldiers, Minutes, Name(usize) }
 
 fn welcome_loop<W: Write>(out: &mut W, session: &mut Session) -> Result<()> {
@@ -186,6 +186,21 @@ fn welcome_loop<W: Write>(out: &mut W, session: &mut Session) -> Result<()> {
                         }
                         field = next_field(field, names.len());
                     }
+                    // +/- (also unshifted '=' for US layouts) adjust the
+                    // focused numeric field; names keep the raw character.
+                    KeyCode::Char(c) if matches!(field, Field::Soldiers | Field::Minutes)
+                        && matches!(c, '+' | '=' | '-') => {
+                        let delta = if c == '-' { -1 } else { 1 };
+                        let (buf, min, max) = match field {
+                            Field::Soldiers => (&mut soldiers_buf, 1u32, 20u32),
+                            _ => (&mut minutes_buf, 1u32, 999u32),
+                        };
+                        let v = buf.parse::<i64>().unwrap_or(0) + delta;
+                        let v = v.clamp(min as i64, max as i64);
+                        *buf = v.to_string();
+                        info!(event = "field_bump", field = ?field, value = v,
+                            "numeric field adjusted via +/-");
+                    }
                     KeyCode::Backspace => match field {
                         Field::Soldiers => { soldiers_buf.pop(); }
                         Field::Minutes => { minutes_buf.pop(); }
@@ -286,7 +301,7 @@ fn draw_welcome<W: Write>(
         ResetColor,
         Print("\r\n"),
         SetForegroundColor(Color::DarkYellow),
-        Print("    [Tab/↑↓] move  [Enter] next  [F2] COMMENCE  [Esc] abort\r\n"),
+        Print("    [Tab/↑↓] move  [+/-] adjust N & duration  [Enter] next  [F2] COMMENCE  [Esc] abort\r\n"),
         Print("    [s / F5] shuffle order  [r / F6] reset  [Alt+↑/↓] move soldier\r\n"),
         ResetColor
     )?;
