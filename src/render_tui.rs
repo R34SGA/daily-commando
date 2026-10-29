@@ -1195,24 +1195,40 @@ fn draw_closing<W: Write>(out: &mut W, session: &Session) -> Result<()> {
         Print("  ╚══════════════════════════════════════════════════════════╝\r\n\r\n"),
         ResetColor
     )?;
+    let per = session.config().per_soldier_seconds();
     for s in &stats {
-        let over_color = if s.overtime_seconds > 0 {
-            Color::Red
+        let (time_color, over, saved) = if s.overtime_seconds > 0 {
+            (
+                Color::Red,
+                format!("  (+{} over)", fmt(s.overtime_seconds)),
+                String::new(),
+            )
+        } else if s.elapsed_seconds < per {
+            // Under the nominal time: seconds gifted to the rest of the team.
+            (
+                Color::Yellow,
+                String::new(),
+                format!("  (-{} saved)", fmt(per - s.elapsed_seconds)),
+            )
         } else {
-            Color::Green
-        };
-        let over = if s.overtime_seconds > 0 {
-            format!("  (+{} over)", fmt(s.overtime_seconds))
-        } else {
-            String::new()
+            (Color::Green, String::new(), String::new())
         };
         queue!(
             out,
             Print(format!("    {:>2}.  {:<24}  ", s.index, s.name)),
-            SetForegroundColor(over_color),
-            Print(format!("{}{}\r\n", fmt(s.elapsed_seconds), over)),
+            SetForegroundColor(time_color),
+            Print(format!("{}{}", fmt(s.elapsed_seconds), over)),
             ResetColor
         )?;
+        if !saved.is_empty() {
+            queue!(
+                out,
+                SetForegroundColor(Color::Green),
+                Print(saved),
+                ResetColor
+            )?;
+        }
+        queue!(out, Print("\r\n"))?;
     }
     queue!(
         out,
