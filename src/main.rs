@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use daily_commando::{telemetry, Session, SessionConfig};
+use daily_commando::{cache, telemetry, Session, SessionConfig};
 
 mod render_json;
 mod render_tui;
@@ -45,6 +45,10 @@ struct Cli {
     /// Disable the metrics HTTP server entirely
     #[arg(long, default_value_t = false)]
     no_metrics: bool,
+
+    /// Do not read or write the local roster cache
+    #[arg(long, default_value_t = false)]
+    no_cache: bool,
 }
 
 fn main() -> Result<()> {
@@ -61,10 +65,14 @@ fn main() -> Result<()> {
         .names
         .as_deref()
         .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
-        .unwrap_or_default();
+        .unwrap_or_else(|| if cli.no_cache { Vec::new() } else { cache::load().names });
 
     let cfg = SessionConfig {
-        soldiers: cli.soldiers.clamp(1, 20),
+        // `--names` wins over the cache; either grows the roster to fit.
+        soldiers: cli
+            .soldiers
+            .max(parsed_names.len() as u32)
+            .clamp(1, 20),
         total_seconds: cli.minutes.max(1) * 60,
         names: parsed_names,
     };

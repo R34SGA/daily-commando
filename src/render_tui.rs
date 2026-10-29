@@ -13,7 +13,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use daily_commando::{ascii_fonts, landscape, telemetry, Phase, Session, SessionConfig, Tick};
+use daily_commando::{ascii_fonts, cache, landscape, telemetry, Phase, Session, SessionConfig, Tick};
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 use tracing::{info, info_span};
@@ -92,6 +92,7 @@ fn welcome_loop<W: Write>(out: &mut W, session: &mut Session) -> Result<()> {
         .map(|i| cfg0.names.get(i).cloned().unwrap_or_else(|| format!("Soldier {}", i + 1)))
         .collect();
     let mut original_names = names.clone();
+    let mut absent: Vec<bool> = vec![false; names.len()];
     let mut field = Field::Soldiers;
     let mut last_tick = Instant::now();
 
@@ -112,25 +113,40 @@ fn welcome_loop<W: Write>(out: &mut W, session: &mut Session) -> Result<()> {
             let i = original_names.len();
             original_names.push(format!("Soldier {}", i + 1));
         }
+        while absent.len() < n as usize {
+            absent.push(false);
+        }
         names.truncate(n as usize);
         original_names.truncate(n as usize);
+        absent.truncate(n as usize);
 
+        let present = cache::effective_roster(&names, &absent);
         let mins = minutes_buf.parse::<u32>().unwrap_or(0).max(1);
         session.update_config(SessionConfig {
-            soldiers: n,
+            soldiers: present.len().max(1) as u32,
             total_seconds: mins * 60,
-            names: names.clone(),
+            names: present,
         });
         let tick = session.snapshot();
         telemetry::record(&tick, &session.stats());
 
-        draw_welcome(out, &soldiers_buf, &minutes_buf, &names, field, tick.prep_seconds)?;
+        draw_welcome(out, &soldiers_buf, &minutes_buf, &names, &absent, field, tick.prep_seconds)?;
 
         if event::poll(Duration::from_millis(150))? {
             if let Event::Key(k) = event::read()? {
                 if k.kind != KeyEventKind::Press { continue; }
                 let editing_name = matches!(field, Field::Name(_));
                 let alt_held = k.modifiers.contains(KeyModifiers::ALT);
+
+                // Alt+X: toggle exclusion zone membership for the focused soldier
+                if alt_held && matches!(k.code, KeyCode::Char('x') | KeyCode::Char('X')) {
+                    if let Field::Name(i) = field {
+                        absent[i] = !absent[i];
+                        info!(event = "roster_exclusion", index = i, name = %names[i],
+                            absent = absent[i], "soldier exclusion toggled");
+                    }
+                    continue;
+                }
 
                 // Alt+Up/Down: manual reorder of the focused soldier
                 if alt_held && matches!(k.code, KeyCode::Up | KeyCode::Down) {
@@ -156,7 +172,9 @@ fn welcome_loop<W: Write>(out: &mut W, session: &mut Session) -> Result<()> {
                     }
                     KeyCode::Esc => { session.abort(); return Ok(()); }
                     // F2: commence; F5: shuffle (always); F6: reset (always)
-                    KeyCode::F(2) => return Ok(()),
+                    KeyCode::F(2) => {
+                        if commence_roster(&names, &absent) { return Ok(()); }
+                    }
                     KeyCode::F(5) => {
                         shuffle_in_place(&mut names);
                         info!(event = "roster_reorder", action = "shuffle",
@@ -182,7 +200,9 @@ fn welcome_loop<W: Write>(out: &mut W, session: &mut Session) -> Result<()> {
                     KeyCode::BackTab | KeyCode::Up => field = prev_field(field, names.len()),
                     KeyCode::Enter => {
                         if let Field::Name(i) = field {
-                            if i + 1 == names.len() { return Ok(()); }
+                            if i + 1 == names.len() && commence_roster(&names, &absent) {
+                                return Ok(());
+                            }
                         }
                         field = next_field(field, names.len());
                     }
@@ -230,6 +250,21 @@ fn welcome_loop<W: Write>(out: &mut W, session: &mut Session) -> Result<()> {
     }
 }
 
+/// Start the daily? Requires at least one soldier outside the exclusion
+/// zone. Persists the full roster (absentees included) for the next run.
+fn commence_roster(names: &[String], absent: &[bool]) -> bool {
+    if cache::effective_roster(names, absent).is_empty() {
+        info!(event = "commence_refused", reason = "no_present_soldier",
+            "cannot commence with an empty roster");
+        return false;
+    }
+    if let Err(e) = cache::save(names) {
+        info!(event = "cache_save_failed", error = %e,
+            "roster cache could not be written");
+    }
+    true
+}
+
 fn shuffle_in_place(v: &mut [String]) {
     // Fisher-Yates with a tiny LCG seeded from SystemTime.
     let mut seed: u64 = std::time::SystemTime::now()
@@ -266,6 +301,7 @@ fn draw_welcome<W: Write>(
     soldiers: &str,
     minutes: &str,
     names: &[String],
+    absent: &[bool],
     field: Field,
     prep_seconds: u32,
 ) -> Result<()> {
@@ -281,15 +317,52 @@ fn draw_welcome<W: Write>(
 
     field_line(out, "  Soldiers in the boat (N)  : ", soldiers, field == Field::Soldiers, 4)?;
     field_line(out, "  Total daily duration (min): ", minutes, field == Field::Minutes, 4)?;
-    queue!(out, Print("\r\n"))?;
+    let present_count = absent.iter().filter(|a| !**a).count();
+    let roster_len = names.len().max(1);
+    queue!(out, Print(format!(
+        "  Present today            : {} / {}\r\n\r\n",
+        present_count, roster_len
+    )))?;
     queue!(
         out,
         SetForegroundColor(Color::DarkYellow),
         Print("  Order of fire (1 = first to speak):\r\n"),
         ResetColor
     )?;
+    let mut order = 0usize;
     for (i, name) in names.iter().enumerate() {
-        let label = format!("    {:>2}.  ", i + 1);
+        if absent.get(i).copied().unwrap_or(false) { continue; }
+        order += 1;
+        let label = format!("    {:>2}.  ", order);
+        field_line(out, &label, name, field == Field::Name(i), 26)?;
+    }
+
+    queue!(out, Print("\r\n"))?;
+    queue!(
+        out,
+        SetForegroundColor(Color::DarkRed),
+        Print("  Exclusion zone (absent today):\r\n"),
+        ResetColor
+    )?;
+    if !absent.iter().any(|a| *a) {
+        queue!(
+            out,
+            SetForegroundColor(Color::DarkGrey),
+            Print("    (nobody — Alt+X on a soldier to ground them)\r\n"),
+            ResetColor
+        )?;
+    }
+    if order == 0 {
+        queue!(
+            out,
+            SetForegroundColor(Color::Red),
+            Print("    !! empty boat — at least one soldier must be present\r\n"),
+            ResetColor
+        )?;
+    }
+    for (i, name) in names.iter().enumerate() {
+        if !absent.get(i).copied().unwrap_or(false) { continue; }
+        let label = String::from("     x   ");
         field_line(out, &label, name, field == Field::Name(i), 26)?;
     }
 
@@ -303,6 +376,7 @@ fn draw_welcome<W: Write>(
         SetForegroundColor(Color::DarkYellow),
         Print("    [Tab/↑↓] move  [+/-] adjust N & duration  [Enter] next  [F2] COMMENCE  [Esc] abort\r\n"),
         Print("    [s / F5] shuffle order  [r / F6] reset  [Alt+↑/↓] move soldier\r\n"),
+        Print("    [Alt+X] exclude / reinstate soldier\r\n"),
         ResetColor
     )?;
     out.flush()?;
@@ -438,7 +512,7 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
                         KeyCode::Char('q') | KeyCode::Esc if !in_anim => { session.abort(); break; }
 
                         // Manual next
-                        KeyCode::Char('n') | KeyCode::Right if !in_anim && !cascade_active => {
+                        KeyCode::Char('n') | KeyCode::Right if !in_anim => {
                             let snap = session.snapshot();
                             let last = snap.current_soldier == snap.soldiers;
                             let elapsed = snap.elapsed_current as i32;
@@ -446,7 +520,18 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
                             let early = elapsed < alw;
                             let within_budget = snap.total_elapsed <= snap.total_budget;
 
-                            if last && early && within_budget {
+                            if cascade_active {
+                                // Cascade-fail: the boat is already falling, no
+                                // anchor-pull animation makes sense — board the
+                                // current soldier immediately. Passing the last
+                                // soldier ends the failed mission.
+                                if last {
+                                    session.close();
+                                    break;
+                                }
+                                settle_island(&mut settled_islands, &last_world, &snap, false);
+                                session.next_soldier();
+                            } else if last && early && within_budget {
                                 anim = Some(Anim::MarioVictory { frame: 0, started: Instant::now() });
                             } else if early {
                                 anim = Some(Anim::AnchorPull {
@@ -675,7 +760,7 @@ fn draw_running<W: Write>(
         Phase::Closing => "CLOSING", Phase::Aborted => "ABORTED", Phase::Finished => "FINISHED",
     };
     let footer = if cascade_active {
-        format!(" *** CASCADE ***  total {} / {}   [Q/Enter/Space] end mission",
+        format!(" *** CASCADE ***  total {} / {}   [N] next  [Q/Enter/Space] end mission",
             fmt(snap.total_elapsed), fmt(snap.total_budget))
     } else {
         format!(" phase:{}  total {} / {}   [SPACE] pause  [N] next  [Q/ESC] abort",
