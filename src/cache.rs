@@ -32,7 +32,9 @@ pub fn cache_path() -> Option<PathBuf> {
 
 /// Load the cached roster. A missing or corrupt file yields an empty cache.
 pub fn load() -> RosterCache {
-    let Some(path) = cache_path() else { return RosterCache::default() };
+    let Some(path) = cache_path() else {
+        return RosterCache::default();
+    };
     match fs::read_to_string(&path) {
         Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
         Err(_) => RosterCache::default(),
@@ -42,12 +44,16 @@ pub fn load() -> RosterCache {
 /// Persist the full roster (absentees included) for the next run. Best-effort:
 /// I/O errors are reported to the caller and never abort the daily.
 pub fn save(names: &[String]) -> std::io::Result<()> {
-    let Some(path) = cache_path() else { return Ok(()) };
+    let Some(path) = cache_path() else {
+        return Ok(());
+    };
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(&RosterCache { names: names.to_vec() })
-        .map_err(|e| std::io::Error::other(e))?;
+    let json = serde_json::to_string_pretty(&RosterCache {
+        names: names.to_vec(),
+    })
+    .map_err(|e| std::io::Error::other(e))?;
     fs::write(&path, json)
 }
 
@@ -90,7 +96,9 @@ mod tests {
 
     #[test]
     fn cache_json_round_trip() {
-        let cache = RosterCache { names: vec!["Alice".into(), "Bob".into()] };
+        let cache = RosterCache {
+            names: vec!["Alice".into(), "Bob".into()],
+        };
         let json = serde_json::to_string(&cache).unwrap();
         let back: RosterCache = serde_json::from_str(&json).unwrap();
         assert_eq!(back.names, cache.names);

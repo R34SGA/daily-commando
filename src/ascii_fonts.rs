@@ -10,7 +10,10 @@
 //! Composition: characters are concatenated horizontally with a 1-col gap.
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Font { Ok, Ko }
+pub enum Font {
+    Ok,
+    Ko,
+}
 
 const ROWS: usize = 7;
 
@@ -69,7 +72,9 @@ pub fn render_big(s: &str, font: Font) -> Vec<String> {
         .map(|row| {
             let mut line = String::new();
             for (i, g) in glyphs.iter().enumerate() {
-                if i > 0 { line.push(' '); }
+                if i > 0 {
+                    line.push(' ');
+                }
                 line.push_str(g.get(row).copied().unwrap_or(""));
             }
             line

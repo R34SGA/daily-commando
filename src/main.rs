@@ -3,16 +3,23 @@
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use daily_commando::{cache, telemetry, Session, SessionConfig};
+use daily_commando::{Session, SessionConfig, cache, telemetry};
 
 mod render_json;
 mod render_tui;
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
-enum Mode { Tui, Json }
+enum Mode {
+    Tui,
+    Json,
+}
 
 #[derive(Parser, Debug)]
-#[command(name = "daily-commando", version, about = "Minimalist daily standup timer, commando style")]
+#[command(
+    name = "daily-commando",
+    version,
+    about = "Minimalist daily standup timer, commando style"
+)]
 struct Cli {
     /// Number of soldiers (1..=20)
     #[arg(short = 'n', long, default_value_t = 5)]
@@ -64,15 +71,23 @@ fn main() -> Result<()> {
     let parsed_names: Vec<String> = cli
         .names
         .as_deref()
-        .map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
-        .unwrap_or_else(|| if cli.no_cache { Vec::new() } else { cache::load().names });
+        .map(|s| {
+            s.split(',')
+                .map(|x| x.trim().to_string())
+                .filter(|x| !x.is_empty())
+                .collect()
+        })
+        .unwrap_or_else(|| {
+            if cli.no_cache {
+                Vec::new()
+            } else {
+                cache::load().names
+            }
+        });
 
     let cfg = SessionConfig {
         // `--names` wins over the cache; either grows the roster to fit.
-        soldiers: cli
-            .soldiers
-            .max(parsed_names.len() as u32)
-            .clamp(1, 20),
+        soldiers: cli.soldiers.max(parsed_names.len() as u32).clamp(1, 20),
         total_seconds: cli.minutes.max(1) * 60,
         names: parsed_names,
     };

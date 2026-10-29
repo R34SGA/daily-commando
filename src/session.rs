@@ -15,7 +15,11 @@ pub struct SessionConfig {
 
 impl SessionConfig {
     pub fn per_soldier_seconds(&self) -> u32 {
-        if self.soldiers == 0 { 0 } else { self.total_seconds / self.soldiers }
+        if self.soldiers == 0 {
+            0
+        } else {
+            self.total_seconds / self.soldiers
+        }
     }
     pub fn name_of(&self, idx: u32) -> String {
         self.names
@@ -96,12 +100,24 @@ impl Session {
         }
     }
 
-    pub fn config(&self) -> &SessionConfig { &self.config }
-    pub fn phase(&self) -> Phase { self.phase }
-    pub fn current_index(&self) -> u32 { self.current }
-    pub fn elapsed(&self) -> &[u32] { &self.elapsed }
-    pub fn prep_seconds(&self) -> u32 { self.prep_seconds }
-    pub fn closing_seconds(&self) -> u32 { self.closing_seconds }
+    pub fn config(&self) -> &SessionConfig {
+        &self.config
+    }
+    pub fn phase(&self) -> Phase {
+        self.phase
+    }
+    pub fn current_index(&self) -> u32 {
+        self.current
+    }
+    pub fn elapsed(&self) -> &[u32] {
+        &self.elapsed
+    }
+    pub fn prep_seconds(&self) -> u32 {
+        self.prep_seconds
+    }
+    pub fn closing_seconds(&self) -> u32 {
+        self.closing_seconds
+    }
 
     /// Replace the configuration while still in `Preparation`. No-op otherwise.
     pub fn update_config(&mut self, config: SessionConfig) {
@@ -128,7 +144,10 @@ impl Session {
     }
 
     pub fn abort(&mut self) {
-        if matches!(self.phase, Phase::Running | Phase::Paused | Phase::Preparation) {
+        if matches!(
+            self.phase,
+            Phase::Running | Phase::Paused | Phase::Preparation
+        ) {
             self.phase = Phase::Aborted;
         }
     }
@@ -224,7 +243,11 @@ mod tests {
     use super::*;
 
     fn cfg(n: u32, total: u32) -> SessionConfig {
-        SessionConfig { soldiers: n, total_seconds: total, names: vec![] }
+        SessionConfig {
+            soldiers: n,
+            total_seconds: total,
+            names: vec![],
+        }
     }
 
     #[test]
@@ -249,11 +272,17 @@ mod tests {
         assert_eq!(s.prep_seconds(), 1);
         s.commence();
         assert_eq!(s.phase(), Phase::Running);
-        for _ in 0..10 { s.tick_one_second(); }
+        for _ in 0..10 {
+            s.tick_one_second();
+        }
         s.next_soldier();
-        for _ in 0..10 { s.tick_one_second(); }
+        for _ in 0..10 {
+            s.tick_one_second();
+        }
         s.next_soldier();
-        for _ in 0..10 { s.tick_one_second(); }
+        for _ in 0..10 {
+            s.tick_one_second();
+        }
         s.next_soldier(); // last → Closing
         assert_eq!(s.phase(), Phase::Closing);
         s.tick_one_second();
@@ -281,7 +310,9 @@ mod tests {
     fn overtime_reported_in_stats() {
         let mut s = Session::new(cfg(2, 20)); // 10s each
         s.commence();
-        for _ in 0..15 { s.tick_one_second(); }
+        for _ in 0..15 {
+            s.tick_one_second();
+        }
         let stats = s.stats();
         assert_eq!(stats[0].overtime_seconds, 5);
     }
@@ -292,7 +323,9 @@ mod tests {
         let mut s = Session::new(cfg(3, 30));
         s.commence();
         // soldier 1 uses only 4s → saves 6s
-        for _ in 0..4 { s.tick_one_second(); }
+        for _ in 0..4 {
+            s.tick_one_second();
+        }
         s.next_soldier();
         // soldier 2 allowance should now be 10 + (10-4) = 16
         assert_eq!(s.current_allowance(), 16);
@@ -300,7 +333,9 @@ mod tests {
         assert_eq!(snap.current_allowance, 16);
         assert_eq!(snap.remaining_current, 16);
         // soldier 2 uses 20s → overshoot 4
-        for _ in 0..20 { s.tick_one_second(); }
+        for _ in 0..20 {
+            s.tick_one_second();
+        }
         s.next_soldier();
         // soldier 3 allowance = 10 + (10-4) + (10-20) = 6
         assert_eq!(s.current_allowance(), 6);

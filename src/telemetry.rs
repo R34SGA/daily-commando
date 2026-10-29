@@ -18,7 +18,7 @@ use prometheus::{
 };
 use std::sync::Arc;
 use std::thread;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 pub const SERVICE_NAME: &str = "daily-commando";
 pub const SERVICE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -42,7 +42,10 @@ pub static SESSIONS_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
 
 pub static PHASE_SECONDS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
     let m = IntCounterVec::new(
-        Opts::new("phase_seconds_total", "Cumulative seconds spent in each phase"),
+        Opts::new(
+            "phase_seconds_total",
+            "Cumulative seconds spent in each phase",
+        ),
         &["phase"],
     )
     .unwrap();
@@ -52,7 +55,10 @@ pub static PHASE_SECONDS_TOTAL: Lazy<IntCounterVec> = Lazy::new(|| {
 
 pub static SOLDIER_SECONDS: Lazy<GaugeVec> = Lazy::new(|| {
     let m = GaugeVec::new(
-        Opts::new("soldier_seconds", "Seconds spent per soldier in current session"),
+        Opts::new(
+            "soldier_seconds",
+            "Seconds spent per soldier in current session",
+        ),
         &["index", "name"],
     )
     .unwrap();
