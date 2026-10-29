@@ -3,7 +3,7 @@
 //! No interactive welcome — the CLI flags fully define the session.
 
 use anyhow::Result;
-use daily_commando::{telemetry, Phase, Session};
+use daily_commando::{Phase, Session, telemetry};
 use serde::Serialize;
 use std::io::{self, Write};
 use std::thread::sleep;
@@ -36,7 +36,9 @@ pub fn run(mut session: Session) -> Result<()> {
         writeln!(out, "{}", serde_json::to_string(&snap)?)?;
         out.flush()?;
 
-        if matches!(snap.phase, Phase::Closing | Phase::Aborted) { break; }
+        if matches!(snap.phase, Phase::Closing | Phase::Aborted) {
+            break;
+        }
 
         sleep(Duration::from_secs(1));
         session.tick_one_second();

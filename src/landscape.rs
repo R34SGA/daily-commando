@@ -48,13 +48,25 @@ pub struct WorldState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Act { Voyage, Cascade, Hell }
+pub enum Act {
+    Voyage,
+    Cascade,
+    Hell,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SatanStage { None, Face, FaceTrident, FullHell }
+pub enum SatanStage {
+    None,
+    Face,
+    FaceTrident,
+    FullHell,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CastleState { Intact, Destroyed }
+pub enum CastleState {
+    Intact,
+    Destroyed,
+}
 
 /// Per-island visual state.
 #[derive(Debug, Clone, Copy)]
@@ -78,7 +90,7 @@ pub struct Inputs {
     pub total_elapsed: u32,
     pub total_budget: u32,
     pub soldiers: u32,
-    pub current_soldier: u32,    // 1-based
+    pub current_soldier: u32, // 1-based
     pub elapsed_current: u32,
     pub current_allowance: i32,
     pub cols: usize,
@@ -130,7 +142,9 @@ impl WorldState {
             vec![start_x, castle_dock_x]
         } else {
             let span = castle_dock_x.saturating_sub(start_x);
-            (0..=n).map(|k| start_x + (span as f32 * (k as f32 / n as f32)) as usize).collect()
+            (0..=n)
+                .map(|k| start_x + (span as f32 * (k as f32 / n as f32)) as usize)
+                .collect()
         };
 
         // ── Constant-cruise boat ───────────────────────────────────
@@ -147,7 +161,7 @@ impl WorldState {
             p if p < 2.0 => (Act::Cascade, SatanStage::None),
             p if p < 2.5 => (Act::Cascade, SatanStage::Face),
             p if p < 3.0 => (Act::Cascade, SatanStage::FaceTrident),
-            _            => (Act::Hell,    SatanStage::FullHell),
+            _ => (Act::Hell, SatanStage::FullHell),
         };
 
         // ── Boat per act ───────────────────────────────────────────
@@ -163,13 +177,14 @@ impl WorldState {
                 // Boat: continues right past castle, then falls vertically
                 // along the right side. Fall progress in 0..1 across 1x..3x.
                 let fall = ((progress - 1.0) / 2.0).clamp(0.0, 1.0);
-                let horiz = (fall / 0.2).clamp(0.0, 1.0);              // first 20 % of fall
+                let horiz = (fall / 0.2).clamp(0.0, 1.0); // first 20 % of fall
                 let vert = ((fall - 0.2) / 0.8).clamp(0.0, 1.0);
                 let bx = castle_dock_x
                     + ((cols.saturating_sub(castle_dock_x + 9)) as f32 * horiz) as usize;
                 boat_x = bx.min(cols.saturating_sub(9));
                 let max_fall = rows.saturating_sub(4);
-                boat_y = voyage_boat_y + ((max_fall.saturating_sub(voyage_boat_y)) as f32 * vert) as usize;
+                boat_y = voyage_boat_y
+                    + ((max_fall.saturating_sub(voyage_boat_y)) as f32 * vert) as usize;
                 boat_rotation = ((inp.elapsed_ms / 250) % 4) as u8;
                 boat_wrecked = false;
             }
@@ -188,7 +203,9 @@ impl WorldState {
             Act::Cascade => {
                 // Horizon slowly rises with cascade progress.
                 let secs = (inp.total_elapsed as i32 - budget as i32).max(0) as usize;
-                rows.saturating_sub(2).saturating_sub(secs / 2).max(rows / 5)
+                rows.saturating_sub(2)
+                    .saturating_sub(secs / 2)
+                    .max(rows / 5)
             }
             Act::Hell => rows.saturating_sub(2),
         };
@@ -196,7 +213,9 @@ impl WorldState {
         // ── Sun ────────────────────────────────────────────────────
         let sun_x = if matches!(act, Act::Voyage) {
             ((cols as f32 - 4.0) * progress.min(1.0)) as usize
-        } else { 0 };
+        } else {
+            0
+        };
 
         // ── Islands state machine ──────────────────────────────────
         // For island k (0-based, holding soldier k+2) sitting at stops[k+1]:
@@ -208,7 +227,7 @@ impl WorldState {
         let cur = inp.current_soldier as usize;
         for k in 0..n.saturating_sub(1) {
             let original_x = stops[k + 1];
-            let waiting_soldier = (k + 2) as u32;          // 1-based
+            let waiting_soldier = (k + 2) as u32; // 1-based
             let consumed = waiting_soldier <= inp.current_soldier;
             let mut x = original_x;
             let mut towed = false;
@@ -219,7 +238,7 @@ impl WorldState {
                 if let Some(ap) = inp.anchor_pull {
                     if ap.stop_index == k + 1 {
                         let p = ap.progress.clamp(0.0, 1.0);
-                        let dest = boat_x.saturating_add(2);    // arrive next to boat
+                        let dest = boat_x.saturating_add(2); // arrive next to boat
                         x = lerp_x(original_x, dest, p);
                         pulling = true;
                         tilt = (p * 3.0).round() as u8;
@@ -238,23 +257,43 @@ impl WorldState {
                     tilt = ((dist / 8.0).clamp(0.0, 1.0) * 3.0).round() as u8;
                 }
             }
-            islands.push(IslandState { x, towed, consumed, pulling, tilt });
+            islands.push(IslandState {
+                x,
+                towed,
+                consumed,
+                pulling,
+                tilt,
+            });
         }
 
-        let castle_state = if matches!(act, Act::Voyage) || (matches!(act, Act::Cascade) && progress < 1.05) {
-            CastleState::Intact
-        } else {
-            CastleState::Destroyed
-        };
+        let castle_state =
+            if matches!(act, Act::Voyage) || (matches!(act, Act::Cascade) && progress < 1.05) {
+                CastleState::Intact
+            } else {
+                CastleState::Destroyed
+            };
         let cascade_x = cols.saturating_sub(4);
 
         WorldState {
-            cols, rows, act, satan_stage, sun_x,
-            boat_x, boat_y, boat_rotation, boat_wrecked,
-            horizon_y, stops, islands,
+            cols,
+            rows,
+            act,
+            satan_stage,
+            sun_x,
+            boat_x,
+            boat_y,
+            boat_rotation,
+            boat_wrecked,
+            horizon_y,
+            stops,
+            islands,
             settled: inp.settled.clone(),
-            current_soldier: inp.current_soldier, soldiers: inp.soldiers,
-            castle_x, castle_w, castle_state, cascade_x,
+            current_soldier: inp.current_soldier,
+            soldiers: inp.soldiers,
+            castle_x,
+            castle_w,
+            castle_state,
+            cascade_x,
         }
     }
 }
@@ -266,11 +305,7 @@ fn lerp_x(from: usize, to: usize, p: f32) -> usize {
 }
 
 /// Paint the entire decor onto the (canvas, color_map). Call BEFORE the timer.
-pub fn paint(
-    w: &WorldState,
-    canvas: &mut [Vec<char>],
-    colors: &mut [Vec<Option<Color>>],
-) {
+pub fn paint(w: &WorldState, canvas: &mut [Vec<char>], colors: &mut [Vec<Option<Color>>]) {
     // Sky: sun
     if matches!(w.act, Act::Voyage) && w.sun_x < w.cols {
         place(canvas, colors, w.sun_x, 1, '*', Color::Yellow);
@@ -296,7 +331,11 @@ pub fn paint(
             // Flag pole + colored flag with soldier name
             if w.horizon_y >= 5 {
                 let pole_x = si.x;
-                let flag_color = if si.was_early { Color::Green } else { Color::Red };
+                let flag_color = if si.was_early {
+                    Color::Green
+                } else {
+                    Color::Red
+                };
                 // Pole
                 place(canvas, colors, pole_x, w.horizon_y - 5, '|', Color::White);
                 place(canvas, colors, pole_x, w.horizon_y - 6, '|', Color::White);
@@ -313,7 +352,9 @@ pub fn paint(
 
         // Active (not-yet-consumed) islands.
         for (k, isl) in w.islands.iter().enumerate() {
-            if isl.consumed { continue; }
+            if isl.consumed {
+                continue;
+            }
             paint_island(canvas, colors, isl.x, w.horizon_y, isl.tilt);
             // Waiting soldier head
             if w.horizon_y >= 5 {
@@ -331,7 +372,11 @@ pub fn paint(
                     place(canvas, colors, x, rope_y, '-', Color::DarkGrey);
                 }
                 // Anchor at the island side
-                let anchor_x = if isl.x < w.boat_x { isl.x + 1 } else { isl.x.saturating_sub(1) };
+                let anchor_x = if isl.x < w.boat_x {
+                    isl.x + 1
+                } else {
+                    isl.x.saturating_sub(1)
+                };
                 place(canvas, colors, anchor_x, rope_y, 'J', Color::DarkGrey);
             }
             let _ = k;
@@ -359,11 +404,7 @@ pub fn paint(
 }
 
 // ─── Boat ────────────────────────────────────────────────────────────
-fn paint_boat(
-    w: &WorldState,
-    canvas: &mut [Vec<char>],
-    colors: &mut [Vec<Option<Color>>],
-) {
+fn paint_boat(w: &WorldState, canvas: &mut [Vec<char>], colors: &mut [Vec<Option<Color>>]) {
     if w.boat_wrecked {
         // Wreck: scattered planks, smoke, fire
         let bx = w.boat_x;
@@ -383,7 +424,9 @@ fn paint_boat(
         for (dx, dy, ch, c) in parts {
             let x = bx as i32 + dx;
             let y = by as i32 + dy;
-            if x >= 0 && y >= 0 { place(canvas, colors, x as usize, y as usize, ch, c); }
+            if x >= 0 && y >= 0 {
+                place(canvas, colors, x as usize, y as usize, ch, c);
+            }
         }
         return;
     }
@@ -440,7 +483,9 @@ fn paint_island(
     horizon_y: usize,
     tilt: u8,
 ) {
-    if horizon_y == 0 { return; }
+    if horizon_y == 0 {
+        return;
+    }
     // Sand on horizon (5 wide)
     if horizon_y < canvas.len() {
         for dx in 0..5 {
@@ -448,7 +493,11 @@ fn paint_island(
             place(canvas, colors, x, horizon_y, '~', Color::DarkYellow);
         }
     }
-    let brown = Color::Rgb { r: 139, g: 69, b: 19 };
+    let brown = Color::Rgb {
+        r: 139,
+        g: 69,
+        b: 19,
+    };
     // Trunk
     let (trunk_offsets, trunk_chars): ([i32; 2], [char; 2]) = match tilt {
         0 => ([0, 0], ['|', '|']),
@@ -467,7 +516,12 @@ fn paint_island(
         place(canvas, colors, x, y, trunk_chars[0], brown);
     }
     // Canopy (5-wide bottom, 3-wide top)
-    let canopy_dx: i32 = match tilt { 0 => 0, 1 => 1, 2 => 2, _ => 3 };
+    let canopy_dx: i32 = match tilt {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        _ => 3,
+    };
     if horizon_y >= 3 {
         let y = horizon_y - 3;
         for dx in 0..5 {
@@ -485,13 +539,11 @@ fn paint_island(
 }
 
 // ─── Castle ──────────────────────────────────────────────────────────
-fn paint_castle(
-    w: &WorldState,
-    canvas: &mut [Vec<char>],
-    colors: &mut [Vec<Option<Color>>],
-) {
+fn paint_castle(w: &WorldState, canvas: &mut [Vec<char>], colors: &mut [Vec<Option<Color>>]) {
     // Hell removes the castle entirely — boat is on the hell floor.
-    if matches!(w.act, Act::Hell) { return; }
+    if matches!(w.act, Act::Hell) {
+        return;
+    }
     if matches!(w.castle_state, CastleState::Intact) && w.horizon_y >= 4 {
         let cw = w.castle_w;
         let cx = w.castle_x;
@@ -514,21 +566,28 @@ fn paint_castle(
     } else if matches!(w.castle_state, CastleState::Destroyed) && w.horizon_y >= 1 {
         let cx = w.castle_x;
         for i in 0..w.castle_w {
-            place(canvas, colors, cx + i, w.horizon_y.saturating_sub(1), ',', Color::DarkGrey);
+            place(
+                canvas,
+                colors,
+                cx + i,
+                w.horizon_y.saturating_sub(1),
+                ',',
+                Color::DarkGrey,
+            );
         }
     }
 }
 
 // ─── Satan staging ───────────────────────────────────────────────────
-fn paint_satan(
-    w: &WorldState,
-    canvas: &mut [Vec<char>],
-    colors: &mut [Vec<Option<Color>>],
-) {
-    if matches!(w.satan_stage, SatanStage::None) { return; }
+fn paint_satan(w: &WorldState, canvas: &mut [Vec<char>], colors: &mut [Vec<Option<Color>>]) {
+    if matches!(w.satan_stage, SatanStage::None) {
+        return;
+    }
     let sx = w.cols / 3;
     let sy = w.rows.saturating_sub(5);
-    if sy + 4 >= w.rows { return; }
+    if sy + 4 >= w.rows {
+        return;
+    }
     // Flames row
     for dx in 0..9 {
         let ch = if dx % 2 == 0 { '\\' } else { '/' };
@@ -557,14 +616,16 @@ fn paint_satan(
 }
 
 // ─── Hell flames background ──────────────────────────────────────────
-fn paint_hell_flames(
-    w: &WorldState,
-    canvas: &mut [Vec<char>],
-    colors: &mut [Vec<Option<Color>>],
-) {
+fn paint_hell_flames(w: &WorldState, canvas: &mut [Vec<char>], colors: &mut [Vec<Option<Color>>]) {
     // Fill the screen with flickering red/orange flame characters using a
     // cheap deterministic pseudo-random based on (x, y, time bucket).
-    let palette = [Color::Red, Color::DarkRed, Color::Yellow, Color::Red, Color::DarkRed];
+    let palette = [
+        Color::Red,
+        Color::DarkRed,
+        Color::Yellow,
+        Color::Red,
+        Color::DarkRed,
+    ];
     let chars = ['^', '\\', '/', '|', 'A', 'V', '*', '~'];
     for y in 1..w.rows.saturating_sub(1) {
         for x in 0..w.cols {
@@ -589,9 +650,13 @@ pub fn place(
     ch: char,
     color: impl Into<Option<Color>>,
 ) {
-    if y >= canvas.len() { return; }
+    if y >= canvas.len() {
+        return;
+    }
     let row = &mut canvas[y];
-    if x >= row.len() { return; }
+    if x >= row.len() {
+        return;
+    }
     row[x] = ch;
     colors[y][x] = color.into();
 }
@@ -600,13 +665,25 @@ pub fn place(
 mod tests {
     use super::*;
 
-    fn make(progress: f32, soldiers: u32, current: u32, elapsed: u32, ap: Option<AnchorPull>) -> WorldState {
+    fn make(
+        progress: f32,
+        soldiers: u32,
+        current: u32,
+        elapsed: u32,
+        ap: Option<AnchorPull>,
+    ) -> WorldState {
         let budget = 60u32;
         let total_elapsed = (budget as f32 * progress) as u32;
         WorldState::compute(&Inputs {
-            total_elapsed, total_budget: budget, soldiers,
-            current_soldier: current, elapsed_current: elapsed,
-            current_allowance: 20, cols: 80, rows: 24, elapsed_ms: 0,
+            total_elapsed,
+            total_budget: budget,
+            soldiers,
+            current_soldier: current,
+            elapsed_current: elapsed,
+            current_allowance: 20,
+            cols: 80,
+            rows: 24,
+            elapsed_ms: 0,
             anchor_pull: ap,
             settled: vec![],
         })
@@ -617,7 +694,10 @@ mod tests {
         assert_eq!(make(0.5, 3, 1, 5, None).satan_stage, SatanStage::None);
         assert_eq!(make(1.5, 3, 3, 90, None).satan_stage, SatanStage::None);
         assert_eq!(make(2.1, 3, 3, 120, None).satan_stage, SatanStage::Face);
-        assert_eq!(make(2.6, 3, 3, 150, None).satan_stage, SatanStage::FaceTrident);
+        assert_eq!(
+            make(2.6, 3, 3, 150, None).satan_stage,
+            SatanStage::FaceTrident
+        );
         assert_eq!(make(3.1, 3, 3, 180, None).satan_stage, SatanStage::FullHell);
     }
 
@@ -643,14 +723,26 @@ mod tests {
         // 0%, 25%, 50%, 75%, 100%. Boat is past stops[1] (25%) so island 0
         // (the destination of speaker 1) should be towed.
         let w = make(0.4, 4, 1, 24, None);
-        assert!(w.islands[0].towed, "island 0 should be towed at progress 0.4 with current=1");
+        assert!(
+            w.islands[0].towed,
+            "island 0 should be towed at progress 0.4 with current=1"
+        );
         // Island 1 (destination of speaker 2) is NOT towed yet (boat hasn't arrived).
         assert!(!w.islands[1].towed);
     }
 
     #[test]
     fn anchor_pull_overrides_island_position() {
-        let w = make(0.2, 4, 1, 12, Some(AnchorPull { stop_index: 1, progress: 0.5 }));
+        let w = make(
+            0.2,
+            4,
+            1,
+            12,
+            Some(AnchorPull {
+                stop_index: 1,
+                progress: 0.5,
+            }),
+        );
         assert!(w.islands[0].pulling);
         assert!(!w.islands[0].towed);
     }

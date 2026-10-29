@@ -2,6 +2,7 @@
 //! Daily Commando — headless core + observability primitives.
 
 pub mod ascii_fonts;
+pub mod cache;
 pub mod landscape;
 pub mod session;
 pub mod telemetry;
