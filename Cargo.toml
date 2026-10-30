@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 description = "A minimalist daily standup timer in commando style"
 license = "EUPL-1.2"
-repository = "https://github.com/robinsft/daily-commando"
+repository = "https://github.com/R34SGA/daily-commando"
+readme = "README.md"
 
 [lib]
 name = "daily_commando"
