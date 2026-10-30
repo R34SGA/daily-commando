@@ -961,41 +961,6 @@ fn draw_running<W: Write>(
         }
     }
 
-    // -- Remaining soldiers panel (right side) ------------------------
-    // Lists the soldiers still to pass (current speaker first). `>` marks
-    // the selection moved with ↑/↓ and reordered with Alt+↑/↓.
-    let remaining = session.remaining_names();
-    let max_name = 12usize;
-    let panel_w = remaining
-        .iter()
-        .map(|n| n.chars().count().min(max_name))
-        .max()
-        .unwrap_or(3)
-        + 3;
-    let x0 = cols.saturating_sub(panel_w + 1);
-    if x0 > 0 {
-        paint_string(
-            &mut canvas,
-            &mut color_map,
-            x0,
-            1,
-            "TO PASS",
-            Color::DarkYellow,
-        );
-        for (i, name) in remaining.iter().enumerate() {
-            let y = 2 + i;
-            if y + 1 >= rows.saturating_sub(1) {
-                break; // keep clear of the footer line
-            }
-            let label: String = name.chars().take(max_name).collect();
-            let row_color = if i == 0 { Color::White } else { Color::Grey };
-            if i == list_cursor {
-                paint_string(&mut canvas, &mut color_map, x0, y, ">", Color::Yellow);
-            }
-            paint_string(&mut canvas, &mut color_map, x0 + 2, y, &label, row_color);
-        }
-    }
-
     // -- Header / footer ----------------------------------------------
     let bonus = snap.current_allowance - snap.per_soldier_seconds as i32;
     let bonus_str = if bonus > 0 {
@@ -1020,6 +985,18 @@ fn draw_running<W: Write>(
         0,
         &header,
         Color::DarkYellow,
+    );
+
+    // -- Rosters below the banner: done (left) & to come (right) -------
+    paint_done_roster(&mut canvas, &mut color_map, &snap, session, rows);
+    paint_upcoming_roster(
+        &mut canvas,
+        &mut color_map,
+        &snap,
+        session,
+        cols,
+        rows,
+        list_cursor,
     );
 
     let phase_str = match snap.phase {
@@ -1066,6 +1043,109 @@ fn draw_running<W: Write>(
 }
 
 // --- Mario victory overlay ---------------------------------------------
+
+/// Left panel: soldiers who already spoke — gray names, consumed time
+/// green if they held the nominal per-person time, yellow up to +5 s,
+/// red beyond.
+fn paint_done_roster(
+    canvas: &mut [Vec<char>],
+    colors: &mut [Vec<Option<Color>>],
+    snap: &Tick,
+    session: &Session,
+    rows: usize,
+) {
+    let per = snap.per_soldier_seconds;
+    for (i, &e) in session.elapsed().iter().enumerate() {
+        // Past speakers only; snapshot's current_soldier is 1-based.
+        if (i as u32) + 1 >= snap.current_soldier {
+            break;
+        }
+        let y = 1 + i;
+        if y + 1 >= rows {
+            break;
+        }
+        let name = session.config().name_of(i as u32);
+        let label = format!("{:>2}. {}  ", i + 1, name);
+        paint_string(canvas, colors, 1, y, &label, Color::DarkGrey);
+        let time_color = if e <= per {
+            Color::Green
+        } else if e <= per + 5 {
+            Color::Yellow
+        } else {
+            Color::Red
+        };
+        paint_string(
+            canvas,
+            colors,
+            1 + label.chars().count(),
+            y,
+            &fmt(e),
+            time_color,
+        );
+    }
+}
+
+/// Right panel: current + upcoming soldiers in gray, plus the time left
+/// per remaining soldier if the current speaker stops now — yellow when
+/// within 5 s of what the current speaker already spent, red below.
+/// Right panel: "TO PASS" — current + upcoming soldiers (current in white,
+/// others gray), `>` marks the selection moved with ↑/↓ and reordered with
+/// Alt+↑/↓. Below the list, the time left per remaining soldier if the
+/// current speaker stops now — yellow within 5 s of what they already
+/// spent, red below.
+fn paint_upcoming_roster(
+    canvas: &mut [Vec<char>],
+    colors: &mut [Vec<Option<Color>>],
+    snap: &Tick,
+    session: &Session,
+    cols: usize,
+    rows: usize,
+    cursor: usize,
+) {
+    let cur = snap.current_soldier; // 1-based
+    let title = "TO PASS";
+    let title_x = cols.saturating_sub(title.chars().count() + 1);
+    paint_string(canvas, colors, title_x, 1, title, Color::DarkYellow);
+    let mut y = 2;
+    for i in cur..=snap.soldiers {
+        if y + 1 >= rows.saturating_sub(1) {
+            break; // keep clear of the footer line
+        }
+        let body = format!("{:>2}. {}", i, session.config().name_of(i - 1));
+        let x = cols.saturating_sub(body.chars().count() + 1);
+        let row_color = if i == cur {
+            Color::White
+        } else {
+            Color::DarkGrey
+        };
+        paint_string(canvas, colors, x, y, &body, row_color);
+        if i - cur == cursor as u32 {
+            paint_string(canvas, colors, x.saturating_sub(2), y, ">", Color::Yellow);
+        }
+        y += 1;
+    }
+    // Divisor: soldiers below the current one in the list (list count - 1).
+    // On the last speaker the counter is dropped — they are alone and the
+    // big timer already shows their remaining time.
+    let below_current = snap.soldiers.saturating_sub(cur);
+    if below_current > 0 && y + 1 < rows.saturating_sub(1) {
+        // (initial daily budget − time consumed since the boat launched)
+        // divided by the soldiers still to pass after the current one.
+        let pool = snap.total_budget as i32 - snap.total_elapsed as i32;
+        let each = (pool.max(0)) / below_current as i32;
+        let spent = snap.elapsed_current as i32;
+        let each_color = if each < spent {
+            Color::Red
+        } else if each <= spent + 5 {
+            Color::Yellow
+        } else {
+            Color::DarkGrey
+        };
+        let label = format!("({}sec each)", each);
+        let x = cols.saturating_sub(label.chars().count() + 1);
+        paint_string(canvas, colors, x, y, &label, each_color);
+    }
+}
 
 fn paint_victory(
     canvas: &mut [Vec<char>],
@@ -1190,24 +1270,40 @@ fn draw_closing<W: Write>(out: &mut W, session: &Session) -> Result<()> {
         Print("  ╚══════════════════════════════════════════════════════════╝\r\n\r\n"),
         ResetColor
     )?;
+    let per = session.config().per_soldier_seconds();
     for s in &stats {
-        let over_color = if s.overtime_seconds > 0 {
-            Color::Red
+        let (time_color, over, saved) = if s.overtime_seconds > 0 {
+            (
+                Color::Red,
+                format!("  (+{} over)", fmt(s.overtime_seconds)),
+                String::new(),
+            )
+        } else if s.elapsed_seconds < per {
+            // Under the nominal time: seconds gifted to the rest of the team.
+            (
+                Color::Yellow,
+                String::new(),
+                format!("  (-{} saved)", fmt(per - s.elapsed_seconds)),
+            )
         } else {
-            Color::Green
-        };
-        let over = if s.overtime_seconds > 0 {
-            format!("  (+{} over)", fmt(s.overtime_seconds))
-        } else {
-            String::new()
+            (Color::Green, String::new(), String::new())
         };
         queue!(
             out,
             Print(format!("    {:>2}.  {:<24}  ", s.index, s.name)),
-            SetForegroundColor(over_color),
-            Print(format!("{}{}\r\n", fmt(s.elapsed_seconds), over)),
+            SetForegroundColor(time_color),
+            Print(format!("{}{}", fmt(s.elapsed_seconds), over)),
             ResetColor
         )?;
+        if !saved.is_empty() {
+            queue!(
+                out,
+                SetForegroundColor(Color::Green),
+                Print(saved),
+                ResetColor
+            )?;
+        }
+        queue!(out, Print("\r\n"))?;
     }
     queue!(
         out,
@@ -1241,9 +1337,12 @@ fn print_final_summary(session: &Session) {
     let total: u32 = stats.iter().map(|s| s.elapsed_seconds).sum();
     println!();
     println!("════════ FINAL DEBRIEF ════════");
+    let per = session.config().per_soldier_seconds();
     for s in &stats {
-        let over = if s.overtime_seconds > 0 {
+        let extra = if s.overtime_seconds > 0 {
             format!("  (+{} over)", fmt(s.overtime_seconds))
+        } else if s.elapsed_seconds < per {
+            format!("  (-{} saved)", fmt(per - s.elapsed_seconds))
         } else {
             String::new()
         };
@@ -1252,7 +1351,7 @@ fn print_final_summary(session: &Session) {
             s.index,
             s.name,
             fmt(s.elapsed_seconds),
-            over
+            extra
         );
     }
     println!("------------------------------");
