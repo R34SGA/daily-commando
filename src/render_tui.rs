@@ -534,6 +534,14 @@ impl DiffRenderer {
             fresh: true,
         }
     }
+    /// Force a complete refresh on the next `render`: the screen is cleared
+    /// and every cell is repainted, discarding the incremental diff. Used
+    /// after events that can desync the display (e.g. reordering the roster
+    /// mid-daily, or a terminal that swallowed bytes).
+    fn invalidate(&mut self) {
+        self.fresh = true;
+    }
+
     fn render<W: Write>(
         &mut self,
         out: &mut W,
@@ -594,73 +602,114 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
     let mut settled_islands: Vec<landscape::SettledIsland> = Vec::new();
     // Track last rendered world state to grab island positions on transition.
     let mut last_world: Option<landscape::WorldState> = None;
+    // Selection cursor inside the remaining-soldiers list (0 = current speaker).
+    let mut list_cursor: usize = 0;
 
     loop {
+        // Keep the cursor inside the list as the daily advances.
+        let rem_len = session.remaining_names().len();
+        list_cursor = list_cursor.min(rem_len.saturating_sub(1));
+
         // -- Input -----------------------------------------------------
         if event::poll(Duration::from_millis(20))? {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press {
                     let in_anim = anim.is_some();
-                    match k.code {
-                        // Pause works in voyage mode (not during anim or cascade)
-                        KeyCode::Char(' ') if !cascade_active && !in_anim => session.toggle_pause(),
+                    let alt_held = k.modifiers.contains(KeyModifiers::ALT);
 
-                        // Cascade-fail: q/Esc/Enter/Space close the mission.
-                        KeyCode::Char(' ') | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Esc
-                            if cascade_active =>
-                        {
-                            session.close();
-                            break;
-                        }
-
-                        // Manual abort (voyage)
-                        KeyCode::Char('q') | KeyCode::Esc if !in_anim => {
-                            session.abort();
-                            break;
-                        }
-
-                        // Manual next
-                        KeyCode::Char('n') | KeyCode::Right if !in_anim => {
-                            let snap = session.snapshot();
-                            let last = snap.current_soldier == snap.soldiers;
-                            let elapsed = snap.elapsed_current as i32;
-                            let alw = snap.current_allowance.max(1);
-                            let early = elapsed < alw;
-                            let within_budget = snap.total_elapsed <= snap.total_budget;
-
-                            if cascade_active {
-                                // Cascade-fail: the boat is already falling, no
-                                // anchor-pull animation makes sense — board the
-                                // current soldier immediately. Passing the last
-                                // soldier ends the failed mission.
-                                if last {
-                                    session.close();
-                                    break;
-                                }
-                                settle_island(&mut settled_islands, &last_world, &snap, false);
-                                session.next_soldier();
-                            } else if last && early && within_budget {
-                                anim = Some(Anim::MarioVictory {
-                                    frame: 0,
-                                    started: Instant::now(),
-                                });
-                            } else if early {
-                                anim = Some(Anim::AnchorPull {
-                                    frame: 0,
-                                    started: Instant::now(),
-                                    stop_index: snap.current_soldier as usize,
-                                    last,
-                                    soldier_name: snap.current_name.clone(),
-                                    was_early: true,
-                                });
-                            } else {
-                                // Boat already at (or past) destination — towed
-                                // island just gets boarded immediately. Settle it.
-                                settle_island(&mut settled_islands, &last_world, &snap, false);
-                                session.next_soldier();
+                    // Alt+Up/Down: move the selected remaining soldier.
+                    if alt_held && matches!(k.code, KeyCode::Up | KeyCode::Down) {
+                        if !in_anim {
+                            let cur0 = session.current_index() as usize;
+                            let from = cur0 + list_cursor;
+                            let to = match k.code {
+                                KeyCode::Up => from.saturating_sub(1),
+                                _ => from + 1,
+                            };
+                            if session.reorder_remaining(from, to) {
+                                // Follow the soldier that just moved.
+                                list_cursor = to - cur0;
+                                // Complete refresh of every on-screen object on
+                                // the next frame — the roster change must not
+                                // leave any stale cells behind.
+                                renderer.invalidate();
+                                info!(
+                                    event = "running_reorder",
+                                    from, to, "remaining soldier moved during daily"
+                                );
                             }
                         }
-                        _ => {}
+                    } else {
+                        match k.code {
+                            // Pause works in voyage mode (not during anim or cascade)
+                            KeyCode::Char(' ') if !cascade_active && !in_anim => {
+                                session.toggle_pause()
+                            }
+
+                            // Cascade-fail: q/Esc/Enter/Space close the mission.
+                            KeyCode::Char(' ')
+                            | KeyCode::Enter
+                            | KeyCode::Char('q')
+                            | KeyCode::Esc
+                                if cascade_active =>
+                            {
+                                session.close();
+                                break;
+                            }
+
+                            // Manual abort (voyage)
+                            KeyCode::Char('q') | KeyCode::Esc if !in_anim => {
+                                session.abort();
+                                break;
+                            }
+
+                            // Manual next
+                            KeyCode::Char('n') | KeyCode::Right if !in_anim => {
+                                let snap = session.snapshot();
+                                let last = snap.current_soldier == snap.soldiers;
+                                let elapsed = snap.elapsed_current as i32;
+                                let alw = snap.current_allowance.max(1);
+                                let early = elapsed < alw;
+                                let within_budget = snap.total_elapsed <= snap.total_budget;
+
+                                if cascade_active {
+                                    // Cascade-fail: the boat is already falling, no
+                                    // anchor-pull animation makes sense — board the
+                                    // current soldier immediately. Passing the last
+                                    // soldier ends the failed mission.
+                                    if last {
+                                        session.close();
+                                        break;
+                                    }
+                                    settle_island(&mut settled_islands, &last_world, &snap, false);
+                                    session.next_soldier();
+                                } else if last && early && within_budget {
+                                    anim = Some(Anim::MarioVictory {
+                                        frame: 0,
+                                        started: Instant::now(),
+                                    });
+                                } else if early {
+                                    anim = Some(Anim::AnchorPull {
+                                        frame: 0,
+                                        started: Instant::now(),
+                                        stop_index: snap.current_soldier as usize,
+                                        last,
+                                        soldier_name: snap.current_name.clone(),
+                                        was_early: true,
+                                    });
+                                } else {
+                                    // Boat already at (or past) destination — towed
+                                    // island just gets boarded immediately. Settle it.
+                                    settle_island(&mut settled_islands, &last_world, &snap, false);
+                                    session.next_soldier();
+                                }
+                            }
+
+                            // Cursor navigation in the remaining list
+                            KeyCode::Up => list_cursor = list_cursor.saturating_sub(1),
+                            KeyCode::Down if list_cursor + 1 < rem_len => list_cursor += 1,
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -751,6 +800,7 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
             cascade_active,
             anim.as_ref(),
             &settled_islands,
+            list_cursor,
         )?);
 
         if matches!(session.phase(), Phase::Closing | Phase::Aborted) && !cascade_active {
@@ -792,6 +842,7 @@ fn draw_running<W: Write>(
     cascade_active: bool,
     anim: Option<&Anim>,
     settled_islands: &[landscape::SettledIsland],
+    list_cursor: usize,
 ) -> Result<landscape::WorldState> {
     let snap = session.snapshot();
     let (cols_u16, rows_u16) = terminal::size().unwrap_or((100, 30));
@@ -938,7 +989,15 @@ fn draw_running<W: Write>(
 
     // -- Rosters below the banner: done (left) & to come (right) -------
     paint_done_roster(&mut canvas, &mut color_map, &snap, session, rows);
-    paint_upcoming_roster(&mut canvas, &mut color_map, &snap, session, cols, rows);
+    paint_upcoming_roster(
+        &mut canvas,
+        &mut color_map,
+        &snap,
+        session,
+        cols,
+        rows,
+        list_cursor,
+    );
 
     let phase_str = match snap.phase {
         Phase::Preparation => "PREP",
@@ -956,7 +1015,7 @@ fn draw_running<W: Write>(
         )
     } else {
         format!(
-            " phase:{}  total {} / {}   [SPACE] pause  [N] next  [Q/ESC] abort",
+            " phase:{}  total {} / {}   [SPACE] pause  [N] next  [↑/↓] select  [ALT+↑/↓] move  [Q/ESC] abort",
             phase_str,
             fmt(snap.total_elapsed),
             fmt(snap.total_budget)
@@ -1029,6 +1088,11 @@ fn paint_done_roster(
 /// Right panel: current + upcoming soldiers in gray, plus the time left
 /// per remaining soldier if the current speaker stops now — yellow when
 /// within 5 s of what the current speaker already spent, red below.
+/// Right panel: "TO PASS" — current + upcoming soldiers (current in white,
+/// others gray), `>` marks the selection moved with ↑/↓ and reordered with
+/// Alt+↑/↓. Below the list, the time left per remaining soldier if the
+/// current speaker stops now — yellow within 5 s of what they already
+/// spent, red below.
 fn paint_upcoming_roster(
     canvas: &mut [Vec<char>],
     colors: &mut [Vec<Option<Color>>],
@@ -1036,24 +1100,35 @@ fn paint_upcoming_roster(
     session: &Session,
     cols: usize,
     rows: usize,
+    cursor: usize,
 ) {
     let cur = snap.current_soldier; // 1-based
-    let mut y = 1;
+    let title = "TO PASS";
+    let title_x = cols.saturating_sub(title.chars().count() + 1);
+    paint_string(canvas, colors, title_x, 1, title, Color::DarkYellow);
+    let mut y = 2;
     for i in cur..=snap.soldiers {
-        if y + 1 >= rows {
-            break;
+        if y + 1 >= rows.saturating_sub(1) {
+            break; // keep clear of the footer line
         }
-        let marker = if i == cur { "> " } else { "  " };
-        let label = format!("{}{:>2}. {}", marker, i, session.config().name_of(i - 1));
-        let x = cols.saturating_sub(label.chars().count() + 1);
-        paint_string(canvas, colors, x, y, &label, Color::DarkGrey);
+        let body = format!("{:>2}. {}", i, session.config().name_of(i - 1));
+        let x = cols.saturating_sub(body.chars().count() + 1);
+        let row_color = if i == cur {
+            Color::White
+        } else {
+            Color::DarkGrey
+        };
+        paint_string(canvas, colors, x, y, &body, row_color);
+        if i - cur == cursor as u32 {
+            paint_string(canvas, colors, x.saturating_sub(2), y, ">", Color::Yellow);
+        }
         y += 1;
     }
     // Divisor: soldiers below the current one in the list (list count - 1).
     // On the last speaker the counter is dropped — they are alone and the
     // big timer already shows their remaining time.
     let below_current = snap.soldiers.saturating_sub(cur);
-    if below_current > 0 && y + 1 < rows {
+    if below_current > 0 && y + 1 < rows.saturating_sub(1) {
         // (initial daily budget − time consumed since the boat launched)
         // divided by the soldiers still to pass after the current one.
         let pool = snap.total_budget as i32 - snap.total_elapsed as i32;
@@ -1292,4 +1367,124 @@ fn print_final_summary(session: &Session) {
         phase = ?session.phase(),
         "session terminated"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session() -> Session {
+        let mut s = Session::new(SessionConfig {
+            soldiers: 3,
+            total_seconds: 90,
+            names: vec!["Alice".into(), "Bob".into(), "Carol".into()],
+        });
+        s.commence();
+        s
+    }
+
+    /// Fresh 100x30 render (no tty → `terminal::size` falls back to 100x30),
+    /// returning the raw ANSI stream so panel placement can be asserted.
+    fn render(s: &Session, cursor: usize) -> String {
+        let mut renderer = DiffRenderer::new();
+        let mut buf: Vec<u8> = Vec::new();
+        draw_running(
+            &mut buf,
+            &mut renderer,
+            s,
+            0,
+            0,
+            0,
+            0,
+            false,
+            None,
+            &[],
+            cursor,
+        )
+        .unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    /// Name displayed right after the `>` selection marker in the panel.
+    /// ANSI escape sequences are skipped before extracting the name.
+    fn selected_name(out: &str) -> String {
+        let idx = out.find("TO PASS").expect("panel title rendered");
+        let after = &out[idx..];
+        let m = after.find('>').expect("selection marker rendered");
+        let mut clean = String::new();
+        let mut in_escape = false;
+        for c in after[m + 1..].chars() {
+            if in_escape {
+                if c.is_ascii_alphabetic() {
+                    in_escape = false; // ANSI sequences end with a letter (H, m, …)
+                }
+            } else if c == '\u{1b}' {
+                in_escape = true;
+                clean.push(' '); // escape = visual break between cells
+            } else {
+                clean.push(c);
+            }
+        }
+        clean
+            .chars()
+            .skip_while(|c| !c.is_ascii_alphabetic())
+            .take_while(|c| c.is_ascii_alphabetic())
+            .collect()
+    }
+
+    #[test]
+    fn running_panel_lists_remaining_and_marks_selection() {
+        let s = session();
+        let out = render(&s, 0);
+        assert!(out.contains("TO PASS"));
+        assert!(out.contains("Alice"));
+        assert!(out.contains("Bob"));
+        assert!(out.contains("Carol"));
+        assert_eq!(selected_name(&out), "Alice");
+
+        let out = render(&s, 1);
+        assert_eq!(selected_name(&out), "Bob");
+
+        let out = render(&s, 2);
+        assert_eq!(selected_name(&out), "Carol");
+    }
+
+    #[test]
+    fn invalidate_forces_complete_repaint() {
+        let s = session();
+        let mut renderer = DiffRenderer::new();
+        let mut buf: Vec<u8> = Vec::new();
+        draw_running(&mut buf, &mut renderer, &s, 0, 0, 0, 0, false, None, &[], 0).unwrap();
+
+        // Same state on the next frame → incremental diff emits almost nothing.
+        let mut buf: Vec<u8> = Vec::new();
+        draw_running(&mut buf, &mut renderer, &s, 0, 0, 0, 0, false, None, &[], 0).unwrap();
+        let incremental = String::from_utf8_lossy(&buf);
+        assert!(!incremental.contains("TO PASS"), "no repaint expected");
+
+        // After a roster change, invalidate() must trigger a full refresh:
+        // screen clear + repaint of every cell, changed or not.
+        renderer.invalidate();
+        let mut buf: Vec<u8> = Vec::new();
+        draw_running(&mut buf, &mut renderer, &s, 0, 0, 0, 0, false, None, &[], 0).unwrap();
+        let full = String::from_utf8_lossy(&buf);
+        assert!(full.contains("[2J"), "screen must be cleared");
+        assert!(
+            full.contains("TO PASS"),
+            "unchanged cells must be repainted"
+        );
+        assert!(full.contains("Alice"));
+    }
+
+    #[test]
+    fn running_panel_follows_reorder() {
+        let mut s = session();
+        assert!(s.reorder_remaining(0, 1)); // Alice below Bob
+        let out = render(&s, 0);
+        // panel order: Bob (current, white), Alice, Carol
+        let bob = out.find("Bob").expect("Bob rendered");
+        let alice = out.find("Alice").expect("Alice rendered");
+        assert!(bob < alice, "reordered soldier should come first in panel");
+        assert_eq!(s.snapshot().current_name, "Bob");
+    }
 }

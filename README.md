@@ -61,6 +61,8 @@ section); the daily cannot start with an empty boat.
 |--------------------|-----------------------------------|
 | `Space`            | Pause / resume                    |
 | `n` or `→`         | Manually hand over to next soldier|
+| `↑` / `↓`          | Move the `>` selection in the **remaining** list (right side) |
+| `Alt+↑` / `Alt+↓`  | **Move** the selected soldier up / down the remaining order |
 | `q` / `Esc`        | Abort the daily                   |
 
 > **There is no auto-advance.** When a soldier's allowance hits zero the timer
@@ -77,10 +79,12 @@ The display is a side-scroller:
 * under the banner, **top-left** lists soldiers who already spoke (gray
   names, consumed time green if they held the nominal per-person time,
   yellow up to +5 s, red beyond),
-* under the banner, **top-right** lists the current and upcoming soldiers
-  (gray, current marked with `>`), plus `(XXsec each)` — the time left per
-  remaining soldier if the current one stops now; yellow within 5 s of
-  what the current speaker already spent, red below,
+* under the banner, **top-right** is the **TO PASS** panel: current + upcoming
+  soldiers (current in white, others gray), `>` marks the selection moved with
+  `↑`/`↓` and reordered with `Alt+↑`/`Alt+↓` (elapsed seconds travel with the
+  soldier), plus `(XXsec each)` — the time left per remaining soldier if the
+  current one stops now; yellow within 5 s of what the current speaker already
+  spent, red below,
 * a **big centered ASCII timer** counts down the current speaker's allowance,
   going **red and negative** on overshoot,
 * a **boat** (with a tiny soldier on deck) sails at **constant cruise speed**
