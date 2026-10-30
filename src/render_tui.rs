@@ -534,6 +534,14 @@ impl DiffRenderer {
             fresh: true,
         }
     }
+    /// Force a complete refresh on the next `render`: the screen is cleared
+    /// and every cell is repainted, discarding the incremental diff. Used
+    /// after events that can desync the display (e.g. reordering the roster
+    /// mid-daily, or a terminal that swallowed bytes).
+    fn invalidate(&mut self) {
+        self.fresh = true;
+    }
+
     fn render<W: Write>(
         &mut self,
         out: &mut W,
@@ -621,6 +629,10 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
                             if session.reorder_remaining(from, to) {
                                 // Follow the soldier that just moved.
                                 list_cursor = to - cur0;
+                                // Complete refresh of every on-screen object on
+                                // the next frame — the roster change must not
+                                // leave any stale cells behind.
+                                renderer.invalidate();
                                 info!(
                                     event = "running_reorder",
                                     from, to, "remaining soldier moved during daily"
@@ -1336,6 +1348,33 @@ mod tests {
 
         let out = render(&s, 2);
         assert_eq!(selected_name(&out), "Carol");
+    }
+
+    #[test]
+    fn invalidate_forces_complete_repaint() {
+        let s = session();
+        let mut renderer = DiffRenderer::new();
+        let mut buf: Vec<u8> = Vec::new();
+        draw_running(&mut buf, &mut renderer, &s, 0, 0, 0, 0, false, None, &[], 0).unwrap();
+
+        // Same state on the next frame → incremental diff emits almost nothing.
+        let mut buf: Vec<u8> = Vec::new();
+        draw_running(&mut buf, &mut renderer, &s, 0, 0, 0, 0, false, None, &[], 0).unwrap();
+        let incremental = String::from_utf8_lossy(&buf);
+        assert!(!incremental.contains("TO PASS"), "no repaint expected");
+
+        // After a roster change, invalidate() must trigger a full refresh:
+        // screen clear + repaint of every cell, changed or not.
+        renderer.invalidate();
+        let mut buf: Vec<u8> = Vec::new();
+        draw_running(&mut buf, &mut renderer, &s, 0, 0, 0, 0, false, None, &[], 0).unwrap();
+        let full = String::from_utf8_lossy(&buf);
+        assert!(full.contains("[2J"), "screen must be cleared");
+        assert!(
+            full.contains("TO PASS"),
+            "unchanged cells must be repainted"
+        );
+        assert!(full.contains("Alice"));
     }
 
     #[test]
