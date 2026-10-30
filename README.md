@@ -61,6 +61,8 @@ section); the daily cannot start with an empty boat.
 |--------------------|-----------------------------------|
 | `Space`            | Pause / resume                    |
 | `n` or `→`         | Manually hand over to next soldier|
+| `↑` / `↓`          | Move the `>` selection in the **remaining** list (right side) |
+| `Alt+↑` / `Alt+↓`  | **Move** the selected soldier up / down the remaining order |
 | `q` / `Esc`        | Abort the daily                   |
 
 > **There is no auto-advance.** When a soldier's allowance hits zero the timer
@@ -78,6 +80,9 @@ The display is a side-scroller:
   going **red and negative** on overshoot,
 * a **boat** (with a tiny soldier on deck) sails at **constant cruise speed**
   driven by `total_elapsed / total_budget`,
+* the **right side shows the soldiers still to pass** (current speaker first)
+  — `↑`/`↓` move a `>` selection and `Alt+↑`/`Alt+↓` reorder the selected
+  soldier on the fly; the speaker's elapsed seconds travel with them,
 * each island has a **brown trunk + green canopy** palm and the next waiting
   soldier; islands sit still until either the user hands over early (anchor
   pulls the island TO the boat) or the boat passes without pickup (a rope

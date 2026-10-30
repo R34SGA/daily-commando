@@ -202,6 +202,31 @@ impl Session {
         self.allowance_for(self.current)
     }
 
+    /// Soldiers still to pass, starting with the one currently speaking.
+    pub fn remaining_names(&self) -> Vec<String> {
+        (self.current as usize..self.config.soldiers as usize)
+            .map(|i| self.config.name_of(i as u32))
+            .collect()
+    }
+
+    /// Swap two soldiers who have not started speaking yet (0-based absolute
+    /// indices). Elapsed seconds travel with the soldier, so a speaker moved
+    /// down keeps the time they already consumed and their slot restarts
+    /// fresh for the new occupant. Returns `false` (no-op) when either
+    /// index belongs to a soldier who already spoke or is out of bounds.
+    pub fn reorder_remaining(&mut self, a: usize, b: usize) -> bool {
+        let cur = self.current as usize;
+        let n = self.config.names.len();
+        if a == b || a < cur || b < cur || a >= n || b >= n {
+            return false;
+        }
+        self.config.names.swap(a, b);
+        if a < self.elapsed.len() && b < self.elapsed.len() {
+            self.elapsed.swap(a, b);
+        }
+        true
+    }
+
     pub fn snapshot(&self) -> Tick {
         let per = self.config.per_soldier_seconds();
         let elapsed_current = *self.elapsed.get(self.current as usize).unwrap_or(&0);
@@ -349,5 +374,51 @@ mod tests {
         s.commence();
         s.update_config(cfg(8, 80));
         assert_eq!(s.config().soldiers, 4);
+    }
+
+    fn named(n: u32, total: u32, names: &[&str]) -> Session {
+        Session::new(SessionConfig {
+            soldiers: n,
+            total_seconds: total,
+            names: names.iter().map(|s| s.to_string()).collect(),
+        })
+    }
+
+    #[test]
+    fn reorder_remaining_moves_names_and_elapsed() {
+        let mut s = named(3, 30, &["Alice", "Bob", "Carol"]);
+        s.commence();
+        for _ in 0..4 {
+            s.tick_one_second();
+        }
+        assert!(s.reorder_remaining(1, 2)); // Bob <-> Carol
+        assert_eq!(
+            s.remaining_names(),
+            vec!["Alice".to_string(), "Carol".into(), "Bob".into()]
+        );
+        // Moving the current speaker down: elapsed travels with them.
+        assert!(s.reorder_remaining(0, 1));
+        assert_eq!(
+            s.remaining_names(),
+            vec!["Carol".to_string(), "Alice".into(), "Bob".into()]
+        );
+        assert_eq!(s.snapshot().current_name, "Carol");
+        assert_eq!(s.elapsed(), &[0, 4, 0]);
+    }
+
+    #[test]
+    fn reorder_remaining_refuses_spoken_or_invalid_indices() {
+        let mut s = named(3, 30, &["Alice", "Bob", "Carol"]);
+        s.commence();
+        for _ in 0..2 {
+            s.tick_one_second();
+        }
+        s.next_soldier();
+        // index 0 already spoke; also same index or out of bounds → no-op
+        assert!(!s.reorder_remaining(0, 1));
+        assert!(!s.reorder_remaining(1, 1));
+        assert!(!s.reorder_remaining(1, 3));
+        assert!(s.reorder_remaining(1, 2));
+        assert_eq!(s.remaining_names(), vec!["Carol".to_string(), "Bob".into()]);
     }
 }
