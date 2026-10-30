@@ -74,6 +74,13 @@ section); the daily cannot start with an empty boat.
 
 The display is a side-scroller:
 
+* under the banner, **top-left** lists soldiers who already spoke (gray
+  names, consumed time green if they held the nominal per-person time,
+  yellow up to +5 s, red beyond),
+* under the banner, **top-right** lists the current and upcoming soldiers
+  (gray, current marked with `>`), plus `(XXsec each)` — the time left per
+  remaining soldier if the current one stops now; yellow within 5 s of
+  what the current speaker already spent, red below,
 * a **big centered ASCII timer** counts down the current speaker's allowance,
   going **red and negative** on overshoot,
 * a **boat** (with a tiny soldier on deck) sails at **constant cruise speed**
