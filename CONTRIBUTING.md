@@ -53,6 +53,17 @@ fix(session): clamp soldiers to 1..=20
 * Body only when the *why* is not obvious from the diff; wrap at 72 chars.
 * Scope when it helps: `tui`, `session`, `cache`, `telemetry`, `obs`, `cli`.
 
+## CI / Releases
+
+* Every push and PR runs the checks above on GitHub Actions
+  (`.github/workflows/ci.yml`): `cargo fmt --check`, `cargo clippy
+  --all-targets`, `cargo test`, and a locked release build.
+* To ship a release: bump `version` in `Cargo.toml`, merge to `main`, then
+  tag `main` with `vX.Y.Z` and push the tag. The `release` workflow
+  verifies the tag (on `main`, matching `Cargo.toml`'s version), publishes
+  the crate to crates.io (needs the `CARGO_REGISTRY_TOKEN` repository
+  secret), then opens the GitHub release with generated notes.
+
 ## Pull requests
 
 1. Branch from `main` (`feat/…`, `fix/…`).
