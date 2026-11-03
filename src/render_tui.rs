@@ -151,156 +151,157 @@ fn welcome_loop<W: Write>(out: &mut W, session: &mut Session) -> Result<()> {
             tick.prep_seconds,
         )?;
 
-        if event::poll(Duration::from_millis(150))? {
-            if let Event::Key(k) = event::read()? {
-                if k.kind != KeyEventKind::Press {
-                    continue;
-                }
-                let editing_name = matches!(field, Field::Name(_));
-                let alt_held = k.modifiers.contains(KeyModifiers::ALT);
+        if event::poll(Duration::from_millis(150))?
+            && let Event::Key(k) = event::read()?
+        {
+            if k.kind != KeyEventKind::Press {
+                continue;
+            }
+            let editing_name = matches!(field, Field::Name(_));
+            let alt_held = k.modifiers.contains(KeyModifiers::ALT);
 
-                // Alt+X: toggle exclusion zone membership for the focused soldier
-                if alt_held && matches!(k.code, KeyCode::Char('x') | KeyCode::Char('X')) {
-                    if let Field::Name(i) = field {
-                        absent[i] = !absent[i];
-                        info!(event = "roster_exclusion", index = i, name = %names[i],
+            // Alt+X: toggle exclusion zone membership for the focused soldier
+            if alt_held && matches!(k.code, KeyCode::Char('x') | KeyCode::Char('X')) {
+                if let Field::Name(i) = field {
+                    absent[i] = !absent[i];
+                    info!(event = "roster_exclusion", index = i, name = %names[i],
                             absent = absent[i], "soldier exclusion toggled");
-                    }
-                    continue;
                 }
+                continue;
+            }
 
-                // Alt+Up/Down: manual reorder of the focused soldier
-                if alt_held && matches!(k.code, KeyCode::Up | KeyCode::Down) {
-                    if let Field::Name(i) = field {
-                        let new_i = match k.code {
-                            KeyCode::Up if i > 0 => Some(i - 1),
-                            KeyCode::Down if i + 1 < names.len() => Some(i + 1),
-                            _ => None,
-                        };
-                        if let Some(j) = new_i {
-                            names.swap(i, j);
-                            field = Field::Name(j);
-                            info!(
-                                event = "roster_reorder",
-                                action = "move",
-                                from = i,
-                                to = j,
-                                "soldier moved"
-                            );
-                        }
+            // Alt+Up/Down: manual reorder of the focused soldier
+            if alt_held && matches!(k.code, KeyCode::Up | KeyCode::Down) {
+                if let Field::Name(i) = field {
+                    let new_i = match k.code {
+                        KeyCode::Up if i > 0 => Some(i - 1),
+                        KeyCode::Down if i + 1 < names.len() => Some(i + 1),
+                        _ => None,
+                    };
+                    if let Some(j) = new_i {
+                        names.swap(i, j);
+                        field = Field::Name(j);
+                        info!(
+                            event = "roster_reorder",
+                            action = "move",
+                            from = i,
+                            to = j,
+                            "soldier moved"
+                        );
                     }
-                    continue;
                 }
+                continue;
+            }
 
-                match k.code {
-                    KeyCode::Esc | KeyCode::Char('q') if !editing_name => {
-                        session.abort();
+            match k.code {
+                KeyCode::Esc | KeyCode::Char('q') if !editing_name => {
+                    session.abort();
+                    return Ok(());
+                }
+                KeyCode::Esc => {
+                    session.abort();
+                    return Ok(());
+                }
+                // F2: commence; F5: shuffle (always); F6: reset (always)
+                KeyCode::F(2) => {
+                    if commence_roster(&names, &absent) {
                         return Ok(());
                     }
-                    KeyCode::Esc => {
-                        session.abort();
-                        return Ok(());
-                    }
-                    // F2: commence; F5: shuffle (always); F6: reset (always)
-                    KeyCode::F(2) => {
-                        if commence_roster(&names, &absent) {
-                            return Ok(());
-                        }
-                    }
-                    KeyCode::F(5) => {
-                        shuffle_in_place(&mut names);
-                        info!(
-                            event = "roster_reorder",
-                            action = "shuffle",
-                            via = "F5",
-                            "roster shuffled"
-                        );
-                    }
-                    KeyCode::F(6) => {
-                        names.clone_from(&original_names);
-                        info!(
-                            event = "roster_reorder",
-                            action = "reset",
-                            via = "F6",
-                            "roster reset"
-                        );
-                    }
-                    // s/r only when not editing a name (collide with typing)
-                    KeyCode::Char('s') if !editing_name => {
-                        shuffle_in_place(&mut names);
-                        info!(
-                            event = "roster_reorder",
-                            action = "shuffle",
-                            via = "s",
-                            "roster shuffled"
-                        );
-                    }
-                    KeyCode::Char('r') if !editing_name => {
-                        names.clone_from(&original_names);
-                        info!(
-                            event = "roster_reorder",
-                            action = "reset",
-                            via = "r",
-                            "roster reset"
-                        );
-                    }
-                    KeyCode::Tab | KeyCode::Down => field = next_field(field, names.len()),
-                    KeyCode::BackTab | KeyCode::Up => field = prev_field(field, names.len()),
-                    KeyCode::Enter => {
-                        if let Field::Name(i) = field {
-                            if i + 1 == names.len() && commence_roster(&names, &absent) {
-                                return Ok(());
-                            }
-                        }
-                        field = next_field(field, names.len());
-                    }
-                    // +/- (also unshifted '=' for US layouts) adjust the
-                    // focused numeric field; names keep the raw character.
-                    KeyCode::Char(c)
-                        if matches!(field, Field::Soldiers | Field::Minutes)
-                            && matches!(c, '+' | '=' | '-') =>
+                }
+                KeyCode::F(5) => {
+                    shuffle_in_place(&mut names);
+                    info!(
+                        event = "roster_reorder",
+                        action = "shuffle",
+                        via = "F5",
+                        "roster shuffled"
+                    );
+                }
+                KeyCode::F(6) => {
+                    names.clone_from(&original_names);
+                    info!(
+                        event = "roster_reorder",
+                        action = "reset",
+                        via = "F6",
+                        "roster reset"
+                    );
+                }
+                // s/r only when not editing a name (collide with typing)
+                KeyCode::Char('s') if !editing_name => {
+                    shuffle_in_place(&mut names);
+                    info!(
+                        event = "roster_reorder",
+                        action = "shuffle",
+                        via = "s",
+                        "roster shuffled"
+                    );
+                }
+                KeyCode::Char('r') if !editing_name => {
+                    names.clone_from(&original_names);
+                    info!(
+                        event = "roster_reorder",
+                        action = "reset",
+                        via = "r",
+                        "roster reset"
+                    );
+                }
+                KeyCode::Tab | KeyCode::Down => field = next_field(field, names.len()),
+                KeyCode::BackTab | KeyCode::Up => field = prev_field(field, names.len()),
+                KeyCode::Enter => {
+                    if let Field::Name(i) = field
+                        && i + 1 == names.len()
+                        && commence_roster(&names, &absent)
                     {
-                        let delta = if c == '-' { -1 } else { 1 };
-                        let (buf, min, max) = match field {
-                            Field::Soldiers => (&mut soldiers_buf, 1u32, 20u32),
-                            _ => (&mut minutes_buf, 1u32, 999u32),
-                        };
-                        let v = buf.parse::<i64>().unwrap_or(0) + delta;
-                        let v = v.clamp(min as i64, max as i64);
-                        *buf = v.to_string();
-                        info!(event = "field_bump", field = ?field, value = v,
-                            "numeric field adjusted via +/-");
+                        return Ok(());
                     }
-                    KeyCode::Backspace => match field {
-                        Field::Soldiers => {
-                            soldiers_buf.pop();
-                        }
-                        Field::Minutes => {
-                            minutes_buf.pop();
-                        }
-                        Field::Name(i) => {
-                            names[i].pop();
-                        }
-                    },
-                    KeyCode::Char(c) => match field {
-                        Field::Soldiers if c.is_ascii_digit() && soldiers_buf.len() < 2 => {
-                            soldiers_buf.push(c);
-                        }
-                        Field::Minutes if c.is_ascii_digit() && minutes_buf.len() < 3 => {
-                            minutes_buf.push(c);
-                        }
-                        Field::Name(i) if !c.is_control() && names[i].len() < 24 => {
-                            names[i].push(c);
-                            // user is editing → record edit as the new "original"
-                            // for this slot so reset reflects the typed name
-                            if let Some(slot) = original_names.get_mut(i) {
-                                *slot = names[i].clone();
-                            }
-                        }
-                        _ => {}
-                    },
-                    _ => {}
+                    field = next_field(field, names.len());
                 }
+                // +/- (also unshifted '=' for US layouts) adjust the
+                // focused numeric field; names keep the raw character.
+                KeyCode::Char(c)
+                    if matches!(field, Field::Soldiers | Field::Minutes)
+                        && matches!(c, '+' | '=' | '-') =>
+                {
+                    let delta = if c == '-' { -1 } else { 1 };
+                    let (buf, min, max) = match field {
+                        Field::Soldiers => (&mut soldiers_buf, 1u32, 20u32),
+                        _ => (&mut minutes_buf, 1u32, 999u32),
+                    };
+                    let v = buf.parse::<i64>().unwrap_or(0) + delta;
+                    let v = v.clamp(min as i64, max as i64);
+                    *buf = v.to_string();
+                    info!(event = "field_bump", field = ?field, value = v,
+                            "numeric field adjusted via +/-");
+                }
+                KeyCode::Backspace => match field {
+                    Field::Soldiers => {
+                        soldiers_buf.pop();
+                    }
+                    Field::Minutes => {
+                        minutes_buf.pop();
+                    }
+                    Field::Name(i) => {
+                        names[i].pop();
+                    }
+                },
+                KeyCode::Char(c) => match field {
+                    Field::Soldiers if c.is_ascii_digit() && soldiers_buf.len() < 2 => {
+                        soldiers_buf.push(c);
+                    }
+                    Field::Minutes if c.is_ascii_digit() && minutes_buf.len() < 3 => {
+                        minutes_buf.push(c);
+                    }
+                    Field::Name(i) if !c.is_control() && names[i].len() < 24 => {
+                        names[i].push(c);
+                        // user is editing → record edit as the new "original"
+                        // for this slot so reset reflects the typed name
+                        if let Some(slot) = original_names.get_mut(i) {
+                            *slot = names[i].clone();
+                        }
+                    }
+                    _ => {}
+                },
+                _ => {}
             }
         }
     }
@@ -593,7 +594,6 @@ impl DiffRenderer {
 fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: bool) -> Result<()> {
     let mut last_sec_tick = Instant::now();
     let start = Instant::now();
-    let mut frame: u64 = 0;
     let mut anim: Option<Anim> = None;
     // Latched once total > budget — boat falls, mission report waits for user.
     let mut cascade_active = false;
@@ -611,106 +611,100 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
         list_cursor = list_cursor.min(rem_len.saturating_sub(1));
 
         // -- Input -----------------------------------------------------
-        if event::poll(Duration::from_millis(20))? {
-            if let Event::Key(k) = event::read()? {
-                if k.kind == KeyEventKind::Press {
-                    let in_anim = anim.is_some();
-                    let alt_held = k.modifiers.contains(KeyModifiers::ALT);
+        if event::poll(Duration::from_millis(20))?
+            && let Event::Key(k) = event::read()?
+            && k.kind == KeyEventKind::Press
+        {
+            let in_anim = anim.is_some();
+            let alt_held = k.modifiers.contains(KeyModifiers::ALT);
 
-                    // Alt+Up/Down: move the selected remaining soldier.
-                    if alt_held && matches!(k.code, KeyCode::Up | KeyCode::Down) {
-                        if !in_anim {
-                            let cur0 = session.current_index() as usize;
-                            let from = cur0 + list_cursor;
-                            let to = match k.code {
-                                KeyCode::Up => from.saturating_sub(1),
-                                _ => from + 1,
-                            };
-                            if session.reorder_remaining(from, to) {
-                                // Follow the soldier that just moved.
-                                list_cursor = to - cur0;
-                                // Complete refresh of every on-screen object on
-                                // the next frame — the roster change must not
-                                // leave any stale cells behind.
-                                renderer.invalidate();
-                                info!(
-                                    event = "running_reorder",
-                                    from, to, "remaining soldier moved during daily"
-                                );
-                            }
-                        }
-                    } else {
-                        match k.code {
-                            // Pause works in voyage mode (not during anim or cascade)
-                            KeyCode::Char(' ') if !cascade_active && !in_anim => {
-                                session.toggle_pause()
-                            }
+            // Alt+Up/Down: move the selected remaining soldier.
+            if alt_held && matches!(k.code, KeyCode::Up | KeyCode::Down) {
+                if !in_anim {
+                    let cur0 = session.current_index() as usize;
+                    let from = cur0 + list_cursor;
+                    let to = match k.code {
+                        KeyCode::Up => from.saturating_sub(1),
+                        _ => from + 1,
+                    };
+                    if session.reorder_remaining(from, to) {
+                        // Follow the soldier that just moved.
+                        list_cursor = to - cur0;
+                        // Complete refresh of every on-screen object on
+                        // the next frame — the roster change must not
+                        // leave any stale cells behind.
+                        renderer.invalidate();
+                        info!(
+                            event = "running_reorder",
+                            from, to, "remaining soldier moved during daily"
+                        );
+                    }
+                }
+            } else {
+                match k.code {
+                    // Pause works in voyage mode (not during anim or cascade)
+                    KeyCode::Char(' ') if !cascade_active && !in_anim => session.toggle_pause(),
 
-                            // Cascade-fail: q/Esc/Enter/Space close the mission.
-                            KeyCode::Char(' ')
-                            | KeyCode::Enter
-                            | KeyCode::Char('q')
-                            | KeyCode::Esc
-                                if cascade_active =>
-                            {
+                    // Cascade-fail: q/Esc/Enter/Space close the mission.
+                    KeyCode::Char(' ') | KeyCode::Enter | KeyCode::Char('q') | KeyCode::Esc
+                        if cascade_active =>
+                    {
+                        session.close();
+                        break;
+                    }
+
+                    // Manual abort (voyage)
+                    KeyCode::Char('q') | KeyCode::Esc if !in_anim => {
+                        session.abort();
+                        break;
+                    }
+
+                    // Manual next
+                    KeyCode::Char('n') | KeyCode::Right if !in_anim => {
+                        let snap = session.snapshot();
+                        let last = snap.current_soldier == snap.soldiers;
+                        let elapsed = snap.elapsed_current as i32;
+                        let alw = snap.current_allowance.max(1);
+                        let early = elapsed < alw;
+                        let within_budget = snap.total_elapsed <= snap.total_budget;
+
+                        if cascade_active {
+                            // Cascade-fail: the boat is already falling, no
+                            // anchor-pull animation makes sense — board the
+                            // current soldier immediately. Passing the last
+                            // soldier ends the failed mission.
+                            if last {
                                 session.close();
                                 break;
                             }
-
-                            // Manual abort (voyage)
-                            KeyCode::Char('q') | KeyCode::Esc if !in_anim => {
-                                session.abort();
-                                break;
-                            }
-
-                            // Manual next
-                            KeyCode::Char('n') | KeyCode::Right if !in_anim => {
-                                let snap = session.snapshot();
-                                let last = snap.current_soldier == snap.soldiers;
-                                let elapsed = snap.elapsed_current as i32;
-                                let alw = snap.current_allowance.max(1);
-                                let early = elapsed < alw;
-                                let within_budget = snap.total_elapsed <= snap.total_budget;
-
-                                if cascade_active {
-                                    // Cascade-fail: the boat is already falling, no
-                                    // anchor-pull animation makes sense — board the
-                                    // current soldier immediately. Passing the last
-                                    // soldier ends the failed mission.
-                                    if last {
-                                        session.close();
-                                        break;
-                                    }
-                                    settle_island(&mut settled_islands, &last_world, &snap, false);
-                                    session.next_soldier();
-                                } else if last && early && within_budget {
-                                    anim = Some(Anim::MarioVictory {
-                                        frame: 0,
-                                        started: Instant::now(),
-                                    });
-                                } else if early {
-                                    anim = Some(Anim::AnchorPull {
-                                        frame: 0,
-                                        started: Instant::now(),
-                                        stop_index: snap.current_soldier as usize,
-                                        last,
-                                        soldier_name: snap.current_name.clone(),
-                                        was_early: true,
-                                    });
-                                } else {
-                                    // Boat already at (or past) destination — towed
-                                    // island just gets boarded immediately. Settle it.
-                                    settle_island(&mut settled_islands, &last_world, &snap, false);
-                                    session.next_soldier();
-                                }
-                            }
-
-                            // Cursor navigation in the remaining list
-                            KeyCode::Up => list_cursor = list_cursor.saturating_sub(1),
-                            KeyCode::Down if list_cursor + 1 < rem_len => list_cursor += 1,
-                            _ => {}
+                            settle_island(&mut settled_islands, &last_world, &snap, false);
+                            session.next_soldier();
+                        } else if last && early && within_budget {
+                            anim = Some(Anim::MarioVictory {
+                                frame: 0,
+                                started: Instant::now(),
+                            });
+                        } else if early {
+                            anim = Some(Anim::AnchorPull {
+                                frame: 0,
+                                started: Instant::now(),
+                                stop_index: snap.current_soldier as usize,
+                                last,
+                                soldier_name: snap.current_name.clone(),
+                                was_early: true,
+                            });
+                        } else {
+                            // Boat already at (or past) destination — towed
+                            // island just gets boarded immediately. Settle it.
+                            settle_island(&mut settled_islands, &last_world, &snap, false);
+                            session.next_soldier();
                         }
                     }
+
+                    // Cursor navigation in the remaining list
+                    KeyCode::Up => list_cursor = list_cursor.saturating_sub(1),
+                    KeyCode::Down if list_cursor + 1 < rem_len => list_cursor += 1,
+                    _ => {}
                 }
             }
         }
@@ -785,17 +779,11 @@ fn running_loop<W: Write>(out: &mut W, session: &mut Session, _auto_advance: boo
         anim = next_anim;
 
         // -- Render ----------------------------------------------------
-        frame += 1;
         let elapsed_ms = start.elapsed().as_millis() as u64;
-        let blink_500 = ((elapsed_ms / 500) % 2) as u8;
-        let blink_1000 = ((elapsed_ms / 1000) % 2) as u8;
         last_world = Some(draw_running(
             out,
             &mut renderer,
             session,
-            frame,
-            blink_500,
-            blink_1000,
             elapsed_ms,
             cascade_active,
             anim.as_ref(),
@@ -831,13 +819,13 @@ fn settle_island(
     });
 }
 
+/// One frame of the running screen. The blink cadences are derived from
+/// `elapsed_ms`; the panel cursor is the selection moved with ↑/↓.
+#[allow(clippy::too_many_arguments)] // per-frame render context, kept flat
 fn draw_running<W: Write>(
     out: &mut W,
     renderer: &mut DiffRenderer,
     session: &Session,
-    frame: u64,
-    blink_500: u8,
-    blink_1000: u8,
     elapsed_ms: u64,
     cascade_active: bool,
     anim: Option<&Anim>,
@@ -848,6 +836,8 @@ fn draw_running<W: Write>(
     let (cols_u16, rows_u16) = terminal::size().unwrap_or((100, 30));
     let cols = cols_u16 as usize;
     let rows = rows_u16 as usize;
+    let blink_500 = ((elapsed_ms / 500) % 2) as u8;
+    let blink_1000 = ((elapsed_ms / 1000) % 2) as u8;
 
     // -- Decide which font & color the timer uses ----------------------
     let alw = snap.current_allowance.max(1);
@@ -941,11 +931,9 @@ fn draw_running<W: Write>(
         }
         let mut x = start_x;
         if let Some(c) = prefix {
-            if dy == timer_h / 2 {
-                if x < cols {
-                    canvas[y][x] = c;
-                    color_map[y][x] = Some(color);
-                }
+            if dy == timer_h / 2 && x < cols {
+                canvas[y][x] = c;
+                color_map[y][x] = Some(color);
             }
             x += 4;
         }
@@ -1035,7 +1023,6 @@ fn draw_running<W: Write>(
             },
         );
     }
-    let _ = frame;
 
     // -- Diff flush ---------------------------------------------------
     renderer.render(out, &canvas, &color_map)?;
@@ -1222,14 +1209,12 @@ fn paint_string(
     }
     let row = &mut canvas[y];
     let crow = &mut colors[y];
-    let mut xi = x;
-    for ch in s.chars() {
+    for (xi, ch) in (x..).zip(s.chars()) {
         if xi >= row.len() {
             break;
         }
         row[xi] = ch;
         crow[xi] = Some(color);
-        xi += 1;
     }
 }
 
@@ -1237,14 +1222,12 @@ fn paint_string(
 fn closing_loop<W: Write>(out: &mut W, session: &mut Session) -> Result<()> {
     let mut last_tick = Instant::now();
     loop {
-        if event::poll(Duration::from_millis(150))? {
-            if let Event::Key(k) = event::read()? {
-                if k.kind == KeyEventKind::Press {
-                    if matches!(k.code, KeyCode::Char('q') | KeyCode::Esc | KeyCode::Enter) {
-                        break;
-                    }
-                }
-            }
+        if event::poll(Duration::from_millis(150))?
+            && let Event::Key(k) = event::read()?
+            && k.kind == KeyEventKind::Press
+            && matches!(k.code, KeyCode::Char('q') | KeyCode::Esc | KeyCode::Enter)
+        {
+            break;
         }
         if last_tick.elapsed() >= Duration::from_secs(1) {
             session.tick_one_second();
@@ -1388,20 +1371,7 @@ mod tests {
     fn render(s: &Session, cursor: usize) -> String {
         let mut renderer = DiffRenderer::new();
         let mut buf: Vec<u8> = Vec::new();
-        draw_running(
-            &mut buf,
-            &mut renderer,
-            s,
-            0,
-            0,
-            0,
-            0,
-            false,
-            None,
-            &[],
-            cursor,
-        )
-        .unwrap();
+        draw_running(&mut buf, &mut renderer, s, 0, false, None, &[], cursor).unwrap();
         String::from_utf8(buf).unwrap()
     }
 
@@ -1454,11 +1424,11 @@ mod tests {
         let s = session();
         let mut renderer = DiffRenderer::new();
         let mut buf: Vec<u8> = Vec::new();
-        draw_running(&mut buf, &mut renderer, &s, 0, 0, 0, 0, false, None, &[], 0).unwrap();
+        draw_running(&mut buf, &mut renderer, &s, 0, false, None, &[], 0).unwrap();
 
         // Same state on the next frame → incremental diff emits almost nothing.
         let mut buf: Vec<u8> = Vec::new();
-        draw_running(&mut buf, &mut renderer, &s, 0, 0, 0, 0, false, None, &[], 0).unwrap();
+        draw_running(&mut buf, &mut renderer, &s, 0, false, None, &[], 0).unwrap();
         let incremental = String::from_utf8_lossy(&buf);
         assert!(!incremental.contains("TO PASS"), "no repaint expected");
 
@@ -1466,7 +1436,7 @@ mod tests {
         // screen clear + repaint of every cell, changed or not.
         renderer.invalidate();
         let mut buf: Vec<u8> = Vec::new();
-        draw_running(&mut buf, &mut renderer, &s, 0, 0, 0, 0, false, None, &[], 0).unwrap();
+        draw_running(&mut buf, &mut renderer, &s, 0, false, None, &[], 0).unwrap();
         let full = String::from_utf8_lossy(&buf);
         assert!(full.contains("[2J"), "screen must be cleared");
         assert!(

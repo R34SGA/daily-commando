@@ -61,10 +61,10 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    if !cli.no_metrics {
-        if let Err(e) = telemetry::init(cli.metrics_port, matches!(cli.mode, Mode::Json)) {
-            eprintln!("warning: telemetry init failed: {e}");
-        }
+    if !cli.no_metrics
+        && let Err(e) = telemetry::init(cli.metrics_port, matches!(cli.mode, Mode::Json))
+    {
+        eprintln!("warning: telemetry init failed: {e}");
     }
     telemetry::SESSIONS_TOTAL.inc();
 

@@ -2,11 +2,11 @@
 //! Observability layer — OpenTelemetry-aligned, dependency-light.
 //!
 //! * **Logs**  : structured JSON via `tracing` + `tracing-subscriber`,
-//!               written to stderr so stdout stays usable for `--mode json`.
+//!   written to stderr so stdout stays usable for `--mode json`.
 //! * **Traces**: `tracing` spans (`session.preparation`, `session.running`, …)
-//!               carrying OTel semantic attributes.
+//!   carrying OTel semantic attributes.
 //! * **Metrics**: Prometheus exposition (OTel-compatible) on `/metrics`,
-//!                served by a tiny synchronous HTTP listener.
+//!   served by a tiny synchronous HTTP listener.
 //!
 //! Resource attributes (`service.name`, `service.version`) follow OTel
 //! semconv. Metric names use the OTel `daily_commando_*` namespace.

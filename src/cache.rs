@@ -53,7 +53,7 @@ pub fn save(names: &[String]) -> std::io::Result<()> {
     let json = serde_json::to_string_pretty(&RosterCache {
         names: names.to_vec(),
     })
-    .map_err(|e| std::io::Error::other(e))?;
+    .map_err(std::io::Error::other)?;
     fs::write(&path, json)
 }
 
