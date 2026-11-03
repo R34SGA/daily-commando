@@ -15,11 +15,7 @@ pub struct SessionConfig {
 
 impl SessionConfig {
     pub fn per_soldier_seconds(&self) -> u32 {
-        if self.soldiers == 0 {
-            0
-        } else {
-            self.total_seconds / self.soldiers
-        }
+        self.total_seconds.checked_div(self.soldiers).unwrap_or(0)
     }
     pub fn name_of(&self, idx: u32) -> String {
         self.names

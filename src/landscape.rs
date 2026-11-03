@@ -17,7 +17,7 @@
 //!   * `2.0..2.5`        — Satan's face appears at the bottom.
 //!   * `2.5..3.0`        — Satan's trident appears too.
 //!   * `>= 3.0`          — Full hell: boat crashes (debris), screen turns
-//!                          red, flames everywhere.
+//!     red, flames everywhere.
 
 use crossterm::style::Color;
 
@@ -235,14 +235,14 @@ impl WorldState {
             let mut tilt = 0u8;
             if !consumed {
                 // Anchor-pull animation overrides position.
-                if let Some(ap) = inp.anchor_pull {
-                    if ap.stop_index == k + 1 {
-                        let p = ap.progress.clamp(0.0, 1.0);
-                        let dest = boat_x.saturating_add(2); // arrive next to boat
-                        x = lerp_x(original_x, dest, p);
-                        pulling = true;
-                        tilt = (p * 3.0).round() as u8;
-                    }
+                if let Some(ap) = inp.anchor_pull
+                    && ap.stop_index == k + 1
+                {
+                    let p = ap.progress.clamp(0.0, 1.0);
+                    let dest = boat_x.saturating_add(2); // arrive next to boat
+                    x = lerp_x(original_x, dest, p);
+                    pulling = true;
+                    tilt = (p * 3.0).round() as u8;
                 }
                 // If not animating, check if the boat passed: the destination
                 // of the *current* speaker is stops[cur]; the island holding
@@ -629,7 +629,7 @@ fn paint_hell_flames(w: &WorldState, canvas: &mut [Vec<char>], colors: &mut [Vec
     let chars = ['^', '\\', '/', '|', 'A', 'V', '*', '~'];
     for y in 1..w.rows.saturating_sub(1) {
         for x in 0..w.cols {
-            let h = (x.wrapping_mul(2654435761) ^ y.wrapping_mul(40503) ^ ((y % 3) * 17)) as usize;
+            let h = x.wrapping_mul(2654435761) ^ y.wrapping_mul(40503) ^ ((y % 3) * 17);
             let ch = chars[h % chars.len()];
             let col = palette[(h >> 3) % palette.len()];
             place(canvas, colors, x, y, ch, col);
