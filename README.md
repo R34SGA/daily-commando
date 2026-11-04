@@ -1,6 +1,6 @@
 # daily-commando
 
-A small daily-standup timer, commando-style — all in your terminal.
+Ain't much but a small daily-standup timer, commando-style — all in your terminal.
 
 Built in Rust as a **headless core** (`Session`) wrapped by two interchangeable
 renderers, so the same engine can later drive a multi-user web backend without
